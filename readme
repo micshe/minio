@@ -1,0 +1,370 @@
+minio
+*****
+minio is a simple mini-library of common posix io operations that 
+either aren't exposed as a single function call by the posix API, 
+or are but require some amount of configuration via flags and 
+reading-the-manual-to-make-sure-you've-remembered-it-right.
+many of these operations (like popen3, mkpath), are widely provided 
+and behave as expected.  some (simplex, duplex, redirect) are just 
+wrappers around common posix functions (pipe, socketpair, dup2) that 
+have an argument signature that i prefer.
+
+in a few situations, similar behaviour has been unified into a single
+function call.  open2()ing a local-stream-socket file connects to
+it as a client.   gets()ing or read2()ing from a directory returns
+the next filename from the directory, like readdir.  accept()ing a 
+connection to a socket server is treated as the same as take()ing
+a file descriptor that was give()en over a local socket.
+
+minio contains some super-posix functionality for tty io, like the
+ioctl to get the screensize of a tty, and functions to the work
+with common tty escape codes for both input and output.
+
+
+threadsafety
+************
+while linux,freebsd,netbsd,openbsd (and probably others) support
+a number of compatible extensions to many common posix syscalls
+(SOCK_CLOEXEC is the main example), minio doesn't rely on these
+yet.  consequently, any file-descriptor creating functions it 
+like minio's take(), redirect(), duplex(), simplex(), and filter() 
+are not thread-exec safe or thread-fork-exec safe.  this is a pity,
+since minio provides two fork-exec functions, filter() and popen3(),
+but it how it is for now.
+
+
+modules
+*******
+minio is divided loosely into 5 modules.  these are not namespaced, 
+but any that would clash with an existing posix function call have 
+a '2' appended to their name to distinguish them.  all functions 
+operate on posix file-descriptors and/or pre-allocated buffers, 
+and are designed to be useful when used with functions from other 
+modules as much as functions from their own.  for example, all 
+modules will require at least one function from the file-descriptor 
+module to be of any practical use.
+
+
+filesystem module
+-----------------
+open2(), mkpath(), mkserver(), filename(), delete(),
+cwdseek(), cwdtell(), cwdgets(), cwdfilename(), chdir2(), chdirfd(), chdirup()
+
+
+networking module
+-----------------
+tcp4(), tcp6(), dial()
+
+
+subprocess module
+-----------------
+popen3(), filter()
+
+
+file descriptor module
+----------------------
+canread(), canwrite(), waitread(), waitwrite(), isonline()
+print(), printva(), puts2(), write2(), read2(), gets2(), 
+simplex(), duplex(), give(), take(), redirect(), close2(),
+blocking(),nonblocking(),cloexec(),noncloexec(),getflags(),setflags()
+crash()
+
+
+terminal module
+---------------
+charmode(), linemode(), 
+input(), size(), quit(),
+cls(), locate(), normal(), 
+palette(), websafe(), greyscale(), color(),
+bold(), italics(), underline(),
+ischaracter(), isctrl(), isalt(), isctrlalt(), isarrow(),
+isup(), isdown(), isleft(), isright(),
+isescape(), isbackspace(), isenter(), istab(),
+character()
+
+
+documentation
+*************
+
+  int open2(char*path, int mode, int perm);
+
+this is a generic open function that works with both 
+local-stream-socket files, regular storage files, directories,
+fifos, and devices.  returns the fd to the opened file on success,
+-1 on error.
+
+
+  int mkpath(char*path, int perm);
+
+this is a generic directory-creator function that creates paths of 
+directories in one call.  returns 0 if the entire path was created,
+-1 if the path could not be created (because it already existed, 
+the path was invalid, the disk was full, or permissions forbid 
+creating new files in one of the path direcotries).
+
+
+  int mkserver(char*path, int flags);
+
+creates a listening local-stream-socket file.  returns the 
+listening fd on success, -1 on error.  the local-server can
+be connected to via minio's open2() function, or the posix
+connect(2) function.
+
+
+  int filename(int fd, char*buffer, size_t length);
+
+attempts to determine the name of the file described by @fd.
+if the name can be determined, it is written to @buffer.
+currently only works for directory-fds.  may fail, depending
+on permissions of parent directory.  returns 0 on sucess, -1
+on failure.
+
+
+  int delete(char*path);
+
+this is a generic delete function, that deletes files, empty
+directories, and populated directories, in one function call.
+the directory must *not* contain any hardlink cycles.  returns
+0 on sucess, -1 on failure.  walks through the directory tree
+using chdir2() and chdirup(), so not safe to use in a 
+multithreading environment.
+
+
+  int cwdseek(off_t offset);
+
+repositions the read-head of the current working 
+directory reader to an offset.  this offset must 
+be either 0, or an offset previously returned by 
+cwdtell().
+
+  
+  int cwdtell(void);
+
+returns the position of the read-head of the current 
+working directory reader.  this offset can be used
+with cwdseek() to return to this location in the cwd
+at a later time.
+
+
+  int cwdgets(char*buffer,size_t length);
+
+reads an entry from the cwd and writes the filename
+to @buffer.  returns 0 on success, -1 on failure.
+
+
+  int cwdfilename(char*buffer,size_t length);
+
+attempts to determine the name of the current working
+directory in its parent directory.  if the name can be 
+determined, it is written to @buffer.  may fail, depending
+on permissions of parent directory.  returns 0 on success, 
+-1 on failure.
+
+
+  int chdir2(char*path, int flags);
+
+cd's the current working directory.  flags can be either 0,
+or O_NOFOLLOW, which will prevent chdir2() from entering
+a symlinked directory.  this function must be used to change
+the cwd in order for cwdseek,cwdtell,cwdgets,chdirup to 
+function correctly.  returns 0 on success, -1 on failure.
+
+
+  int chdirup(void);
+
+cd's to the parent of the current working directory, and
+repositions the current-working-directory-reader's read-head
+to be at the entry after the directory that has just been
+exited.  returns 0 on success, -1 on failure.
+
+
+  int tcp4(short port, int flags);
+
+creates a tcp/ipv4 server listening on @port.  returns fd
+of listening server.  client connections can be taken either
+by posix's accept(2), or by minio's take().  return -1 on
+failure.  flags can be used to set O_NONBLOCK and O_CLOEXEC.
+
+
+  int tcp6(short port, int flags);
+
+creates a tcp/ipv6 server listening on @port.  returns fd
+of listening server.  client connections can be taken either
+by posix's accept(2), or by minio's take().  return -1 on
+failure.  flags can be used to set O_NONBLOCK and O_CLOEXEC.
+
+
+  int dial(char*hostname, int port, int flags);
+
+connects to a tcp ipv4 or ipv6 server on @hostname:@port.
+flags can be used to set O_NONBLOCK and O_CLOEXEC.  returns
+fd of tcp connection to server on success, -1 on failure. 
+
+
+  int popen3(char*command, int stdin,int stdout,int stderr, pid_t*pid);
+
+[todo]
+
+
+  int filter(int pull, char*command, int push, pid_t*pid);
+
+[todo]
+
+
+  int canread(int fd); 
+
+returns true if there is data available to be read from @fd, 
+false if there is not.
+
+
+  int canwrite(int fd);
+
+returns true if there is space for data to be written to @fd, 
+false if there is not.
+
+
+  int waitread(int fd); 
+
+pauses until data becomes available to be read from @fd, or 
+timelimit has run out.
+
+
+  int waitwrite(int fd); 
+
+pauses until space becomes available to write data to @fd, or 
+timelimit has run out.
+
+
+  int isonline(int fd);
+
+returns true if @fd has not been hung-up on, or experienced
+any other kind of connection error.  returns false otherwise.
+
+
+  int print(int fd, char*format, ...); 
+  int printva(int fd, char*format, va_list*args);
+
+  int puts2(int fd, char*string); 
+  int write2(int fd, char*buffer, size_t length); 
+
+  int read2(int fd, char*buffer, size_t length); 
+  int gets2(int fd, char*buffer, size_t length); 
+
+generic fd string-reader function.  if fd is a socket, pipe,
+of regular file, performs a blocking read until either the 
+buffer has been filled, or a \n or \0 is encountered.  if the
+fd is a directory, reads the filename of the next file in the
+directory and writes the filename to the buffer, truncating
+if nessesary.  null terminates the buffer before returning.  
+returns the number of characters written to the buffer on 
+success, or -1 on failure.
+
+  simplex(int fd[2], int flags);
+  duplex(int fd[2], int flags);
+
+
+  give(int fd, int payload);
+
+sends a file descriptor @payload over a local socket @fd.
+on success, the @payload fd will no longer exist in the
+calling process.  returns 0 on sucess, -1 on failure.
+
+
+  take(int fd, int flags);
+
+receives a file descriptor sent over a local socket, or
+accepts a file descriptor connection to a server socket.
+the new file descriptor's O_NONBLOCK and O_CLOEXEC flags
+are set to the value of the @flags argument.  returns the 
+new file descriptor on success, -1 on failure.
+
+
+  redirect(int fd, int target); 
+  close2(int fd);
+  blocking(int fd);
+  nonblocking(int fd);
+  cloexec(int fd);
+  noncloexec(int fd);
+  getflags(int fd);
+  setflags(int fd, int flags);
+  crash(int fd, char*message, ...);
+
+
+  charmode(int fd);
+
+sets the terminal opened on @fd into character-by-character
+mode (sometimes called non-cannonical mode or raw mode).
+returns 0 on success, -1 on failure.
+
+
+  linemode(int fd);
+ 
+sets the terminal opened on @fd into line-by-line mode 
+(sometimes called cannonical mode or cooked mode).
+returns 0 on success, -1 on failure.
+
+
+  input();
+  size();
+  quit();
+
+  cls();
+  locate();
+  normal();
+  
+  palette();
+  websafe();
+  greyscale();
+  color();
+  
+  bold();
+  italics();
+  underline();
+  
+  ischaracter();
+  isctrl();
+  isalt();
+  isctrlalt();
+  isarrow();
+  
+  isup();
+  isdown();
+  isleft();
+  isright();
+  
+  isescape();
+  isbackspace();
+  isenter();
+  istab();
+
+  character();
+
+
+tutorial
+******** 
+todo: make a tty markdown renderer utility (pushable to 
+      stdout via filter())
+      make a tty-choose commandline utility, that pushes the
+      markdown renderer over its stdout 
+todo: make a minimal ls clone, to demonstrait directory reading
+      make a filesize() function, that calculates the size 
+      of directories contents
+      - a breadth first recursive function
+      - a depth first stack-counter function
+
+
+future work
+***********
+- introduce #ifdef'd support for SOCK_CLOEXEC (covers all major OSs bar OSX)
+- introduce mutex()/atfork() based emulation of SOCK_CLOEXEC (for OSX)
+  (this will get thread-fork-exec safety, but not thread-exec safety)
+  (this will SIGNIFICANTLY increase the size of minio)
+  (the addition of atfork() handlers based on mutexes will make fork unsafe 
+  for use in sighandlers)
+- introduce posix ____at() style filesystem functions (this will require 
+  mocking up a connectat() and bindat() pair of functions)
+- introduce a broadcast() function for writing the same string to a batch of
+  file descriptors
+- introduce join,split,fuse,wrap file-descriptor routing operations
+- extend filename() to avail of the /proc/self/fd directory if it exists
+
