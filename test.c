@@ -555,7 +555,7 @@ void test_redirect()
 		printf("fail: read '%s'-- expected 'ch2 data'\n",buf);
 		exit(1);
 	}
-	printf("test: reading from redirected fd\n");
+	printf("pass: reading from redirected fd\n");
 
 	close(ch1[0]);
 	close(ch1[1]);
@@ -615,7 +615,7 @@ void test_mkpath(void)
 		printf("fail: mkpath returned %d: %s\n",err,strerror(errno));
 		exit(1);
 	}
-	printf("test: attempt to make a string of directories with an invalid path failed\n");
+	printf("pass: attempt to make a string of directories with an invalid path failed\n");
 
 	printf("test: make a new path to a new file\n");
 	char*filename="tmpdir0/tmpdir1/tmpdir2/tmpdir3/tmpdir4/tmpdir5/newfile0";
@@ -639,7 +639,7 @@ void test_mkpath(void)
 		perror("fail: open");
 		exit(1);
 	} 
-	printf("test: attempt to make a new path to an existing file failed\n");
+	printf("pass: attempt to make a new path to an existing file failed\n");
 
 	printf("test: attempt to make a new path and file to an existing dir\n");
 	fd = -1;
@@ -647,7 +647,7 @@ void test_mkpath(void)
 	err = mkpath(filename,0755);
 	if(err!=0)
 	{
-		perror("fail: failed to make obstacle dir");
+		perror("fail: failed to make obstacle dir");fflush(stderr);
 		exit(1);
 	}
 
@@ -693,7 +693,7 @@ void test_mkpath(void)
 	printf("debug: mkpath returned %d: %s\n",err,strerror(errno));
 	if(err!=0)
 	{
-		perror("fail: mkpath");
+		perror("fail: mkpath");fflush(stderr);
 		exit(1);
 	}
 	printf("pass: attmpt to mkpath *though* a dir we have no permission to access\n"); 
@@ -1118,16 +1118,16 @@ void test_gets2()
 
 int main(int argc, char*args[])
 {
-	test_mkpath(); 
-	test_gets2();
-	test_delete();
-	test_mkserver();
+//	test_mkpath(); 
+//	test_gets2();
+//	test_delete();
+//	test_mkserver();
 
-	test_redirect();
+//	test_redirect();
 
-	test_popen3();
-	test_filter(); 
-	test_tcp(); 
+//	test_popen3();
+//	test_filter(); 
+//	test_tcp(); 
 
 	test_terminal(); 
 

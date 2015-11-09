@@ -352,6 +352,12 @@ todo: make a minimal ls clone, to demonstrait directory reading
       - a breadth first recursive function
       - a depth first stack-counter function
 
+issues
+******
+- gets2 and read2 do not advance to the next directory entry after reading in FreeBSD.
+- all alt+character presses in FreeBSD report as alt+shift+character.  
+  can't rely on having alt+shift+character being discernable from alt+character.
+
 
 future work
 ***********

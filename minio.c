@@ -213,11 +213,12 @@ static ssize_t readentry(int fd, char*buf, size_t len)
 	off_t offset;
 	ssize_t l;
 
-	fd = dup(fd);
-	if(fd==-1)
+	int tmpfd;
+	tmpfd = dup(fd);
+	if(tmpfd==-1)
 		return -1;
 
-	dp = fdopendir(fd);
+	dp = fdopendir(tmpfd);
 	if(dp==NULL)
 		return -1;
 
@@ -244,6 +245,7 @@ retry:
 		l = 0;
 
 	closedir(dp);
+
 	errno = 0;
 	return l; 
 } 
@@ -279,6 +281,7 @@ ssize_t gets2(int fd, char*buf, size_t len)
 	if(err==-1 && errno!=ENOTSOCK)
 		return -1;
 #endif
+
 	errno = 0;
 	err = readuntil(fd,(unsigned char*)buf,len);
 	if(err>=0)
