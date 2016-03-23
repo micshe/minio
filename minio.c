@@ -833,7 +833,7 @@ int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid)
 		execv(shell[0],shell);
 
 		/* failure */
-		exit(127);
+		_exit(127);
 	}
 
 	if(stderr != stdin && stderr != stdout) close2(stderr);
@@ -903,6 +903,25 @@ int filter(int pull, char*cmd, int push, pid_t*pid)
 fail:
 	close2(channel[0]);
 	close2(channel[1]);
+	return -1;
+}
+int launch(char*cmd,pid_t*pid)
+{
+	int err;
+
+	int channel[2];
+	err = duplex(channel,O_CLOEXEC);
+	if(err==-1)
+		return -1;
+
+	err = popen3(cmd,channel[1],channel[1],-1,pid);
+	if(err==0)
+		return channel[0];
+
+	err = errno;
+	close(channel[0]);
+	errno = err;
+
 	return -1;
 }
 

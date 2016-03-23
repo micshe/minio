@@ -2,7 +2,7 @@
 #define MINIO_H
 
 #ifdef __cplusplus
-exter "C" {
+extern "C" {
 #endif
 
 #include<sys/types.h>   /* for size_t ssize_t */
@@ -44,6 +44,7 @@ int redirect(int src, int dst, int flags);
 
 int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid);
 int filter(int pull, char*cmd, int push, pid_t*pid);
+int launch(char*cmd, pid_t*pid);
 
 int printva(int fd, char*string, va_list*args); 
 int print(int fd, char*string, ...);

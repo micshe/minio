@@ -437,6 +437,33 @@ void test_popen3(void)
 
 	close(subp[0]);	
 }
+void test_launch(void)
+{
+	int err;
+
+	int sp; 
+	printf("test: launch subshell\n");
+	sp = launch("echo 'hello there'\n",NULL);
+	if(sp==-1)
+	{
+		perror("fail: launch subshell");
+		exit(1);
+	}
+	printf("pass: launch subshell\n");
+
+	printf("test: read pipeline output\n");
+	char buf[8192];
+	err = gets2(sp,buf,64);
+	if(err==-1)
+	{
+		perror("fail: read pipeline output");
+		exit(1);
+	}
+	printf("debug: pipeline output '%s'\n",buf);
+	printf("pass: read pipeline output\n");
+
+	close(sp);	
+}
 
 void test_filter(void)
 {
@@ -1118,18 +1145,19 @@ void test_gets2()
 
 int main(int argc, char*args[])
 {
-//	test_mkpath(); 
-//	test_gets2();
-//	test_delete();
-//	test_mkserver();
+	test_mkpath(); 
+	test_gets2();
+	test_delete();
+	//test_mkserver();
 
-//	test_redirect();
+	//test_redirect();
 
-//	test_popen3();
-//	test_filter(); 
-//	test_tcp(); 
+	//test_popen3();
+	test_launch();
+	//test_filter(); 
+	//test_tcp(); 
 
-	test_terminal(); 
+	//test_terminal(); 
 
 	quit(0);
 	return 0;
