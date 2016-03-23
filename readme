@@ -29,8 +29,8 @@ a number of compatible extensions to many common posix syscalls
 yet.  consequently, any file-descriptor creating functions it 
 like minio's take(), redirect(), duplex(), simplex(), and filter() 
 are not thread-exec safe or thread-fork-exec safe.  this is a pity,
-since minio provides two fork-exec functions, filter() and popen3(),
-but it how it is for now.
+since minio provides three fork-exec functions, filter(), launch(), 
+and popen3(), but it how it is for now.
 
 
 modules
@@ -58,7 +58,7 @@ tcp4(), tcp6(), dial()
 
 subprocess module
 -----------------
-popen3(), filter()
+popen3(), launch(), filter()
 
 
 file descriptor module
@@ -202,6 +202,11 @@ fd of tcp connection to server on success, -1 on failure.
 
 
   int popen3(char*command, int stdin,int stdout,int stderr, pid_t*pid);
+
+[todo]
+
+
+  int launch(char*command, pid_t*pid);
 
 [todo]
 
@@ -371,6 +376,17 @@ future work
   mocking up a connectat() and bindat() pair of functions)
 - introduce a broadcast() function for writing the same string to a batch of
   file descriptors
+- consider introducing insert2()/remove2() and inserts()/removes() functions 
+  for inserting and removing text from a file, without overwriting or leaving 
+  blank regions.
 - introduce join,split,fuse,wrap file-descriptor routing operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
+
+- consider introducing a tmpfile function, that creates a randomly named
+  file (without the user having to pass a mutable template string), or an
+  unlinked file (for use as a growable buffer/shared memory)
+  (remove() is a C89 function for delete/unlink, this might be confusing)
+- consider introducing attach()/detatch() wrappers around mmap, following the
+  shmio approach.  no need for shmgive/shmtake/shmshare-- those can be done
+  via passing the file-descriptors.
 

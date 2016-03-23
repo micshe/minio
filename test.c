@@ -1148,16 +1148,16 @@ int main(int argc, char*args[])
 	test_mkpath(); 
 	test_gets2();
 	test_delete();
-	//test_mkserver();
+	test_mkserver();
 
-	//test_redirect();
+	test_redirect();
 
-	//test_popen3();
+	test_popen3();
 	test_launch();
-	//test_filter(); 
-	//test_tcp(); 
+	test_filter(); 
+	test_tcp(); 
 
-	//test_terminal(); 
+	test_terminal(); 
 
 	quit(0);
 	return 0;
