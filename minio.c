@@ -203,11 +203,15 @@ static ssize_t readuntil(int fd,unsigned char*buf, size_t len)
 }
 static ssize_t readentry(int fd, char*buf, size_t len)
 {
+#if 0
 	unsigned char tmp[8192];
 	void*dir;
 	dir = tmp;
 	struct dirent*ent;
 	ent = dir;
+#else
+	struct dirent*ent;
+#endif
 
 	DIR*dp;
 	off_t offset;
@@ -223,7 +227,11 @@ static ssize_t readentry(int fd, char*buf, size_t len)
 		return -1;
 
 retry:
+#if 0
 	readdir_r(dp,dir,&ent);
+#else
+	ent = readdir(dp);
+#endif
 	if(ent!=NULL)
 	{
 		offset = telldir(dp);
@@ -910,12 +918,10 @@ ssize_t write2(int fd, unsigned char*buf, size_t len)
 }
 int puts2(int fd, char*string)
 {
-	int err;
-
 	int len;
 	len = strlen(string); 
 
-	return writeall(fd,string,len);
+	return writeall(fd,(unsigned char*)string,len);
 }
 int printva(int fd, char*string, va_list*args)
 {
