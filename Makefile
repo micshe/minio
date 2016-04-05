@@ -34,10 +34,6 @@ test: minio.o test.c
 	@rm -r tmpdir 2> /dev/null || true 
 	./test 
 
-branch: 
-	$(CC) test.c branch.minio.c -o test
-	./test
-
 static: libminio.a
 shared: libminio.so
 
@@ -101,7 +97,7 @@ help:
 	@echo \'make clean\' will delete all the compiled minio files from this directory.  it will *not* uninstall libminio.so or libminio.a
 	@echo \'make test\' build minio and test the library.  it will not install anything.
 	@echo \'make help\' will show this options page
-	@echo \'make install\' will install libminio.so and libminio.a into $(DESTDIR)$(PREFIX)/lib, and minio.h insto $(DESTDIR)$(PREFIX)/include
+	@echo \'make install\' will install libminio.so and libminio.a into $(DESTDIR)$(PREFIX)/lib, and minio.h into $(DESTDIR)$(PREFIX)/include
 	@echo \'make uninstall\' will delete $(DESTDIR)$(PREFIX)/lib/libminio.so, $(DESTDIR)$(PREFIX)/lib/libminio.a, and $(DESTDIR)$(PREFIX)/include/minio.h 
 	@echo 
 	@echo \'make static\' will only build libminio.a
