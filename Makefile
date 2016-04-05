@@ -15,6 +15,38 @@ libminio.so: minio.o
 	@echo "building shared minio library (libminio.so)"
 	@$(CC) -shared -fPIC minio.o -o libminio.so $(LDFLAGS) 
 
+minio-hlib.h:
+	@echo "building #include -hlib library (minio-hlib.h)"
+	@cp minio.h minio-hlib.h
+	@echo                        >> minio-hlib.h
+	@echo "#ifndef MINIO_HLIB_H" >> minio-hlib.h
+	@echo "#define MINIO_HLIB_H" >> minio-hlib.h
+	@echo "#ifdef __cplusplus"   >> minio-hlib.h
+	@echo 'extern "C" {'         >> minio-hlib.h
+	@echo "#endif"               >> minio-hlib.h
+	@echo cat minio.c            >> minio-hlib.h
+	@echo "#ifdef __cplusplus"   >> minio-hlib.h
+	@echo '}'                    >> minio-hlib.h
+	@echo "#endif"               >> minio-hlib.h
+	@echo "#endif"               >> minio-hlib.h
+
+	#@echo \'make hlib\' will only generate minio-hlib.h 
+
+install-hlib: minio-hlib.h install-header
+	@echo installing minio-hlib.h into $(DESTDIR)$(PREFIX)/include
+	@mkdir -p $(DESTDIR)$(PREFIX)/include
+	@cp minio-hlib.h $(DESTDIR)$(PREFIX)/include/minio-hlib.h
+	@chmod 644 $(DESTDIR)$(PREFIX)/include/minio-hlib.h
+	@echo '  to use minio-hlib.h in another program,'
+	@echo '  set CFLAGS="-I$(DESTDIR)$(PREFIX)/include"'
+	@echo '  and #include<minio-hlib.h> in *one* of your .c files'
+	@echo '(just #include<minio.h> as normal in the other .c files)'
+	@echo 
+
+uninstall-hlib:
+	@echo uninstalling minio-hlib.h from $(DESTDIR)$(PREFIX)/include
+	@rm -f $(DESTDIR)$(PREFIX)/include/minio-hlib.h || true 
+
 clean:
 	@echo "removing minio.o, libminio.a, libminio.so, test"
 	@rm -f minio.o 2> /dev/null || true
@@ -71,15 +103,15 @@ uninstall-header:
 	@echo uninstalling minio.h from $(DESTDIR)$(PREFIX)/include
 	@rm -f $(DESTDIR)$(PREFIX)/include/minio.h || true
 
-uninstall-static: uninstall-header
+uninstall-static:
 	@echo uninstalling libminio.a from $(DESTDIR)$(PREFIX)/lib
 	@rm -f $(DESTDIR)$(PREFIX)/lib/libminio.a || true
 
-uninstall-shared: uninstall-header
+uninstall-shared: 
 	@echo uninstalling libminio.so from $(DESTDIR)$(PREFIX)/lib
 	@rm -f $(DESTDIR)$(PREFIX)/lib/libminio.so || true
 
-uninstall: uninstall-static uninstall-shared
+uninstall: uninstall-static uninstall-shared uninstall-header
 
 options:
 	@echo these are the current configuration options for minio:
