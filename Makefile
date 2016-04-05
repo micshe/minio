@@ -31,8 +31,8 @@ test: minio.o test.c
 	@chmod -R 755 tmpdir0 2> /dev/null || true
 	@rm -r tmpdir0 2>  /dev/null || true
 	@rm tmpsrv 2> /dev/null || true
-	@rm -r tmpdir 2> /dev/null || true
-	./test
+	@rm -r tmpdir 2> /dev/null || true 
+	./test 
 
 branch: 
 	$(CC) test.c branch.minio.c -o test

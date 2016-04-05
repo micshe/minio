@@ -1145,19 +1145,92 @@ void test_gets2()
 
 int main(int argc, char*args[])
 {
-	test_mkpath(); 
-	test_gets2();
-	test_delete();
-	test_mkserver();
+	int flag_mkpath=0, flag_gets2=0, flag_delete=0, flag_mkserver=0, flag_redirect=0, flag_popen3=0, flag_launch=0, flag_filter=0, flag_tcp=0; 
+	int flag_terminal=0;
 
-	test_redirect();
+	if(argc==1)
+	{
+			flag_mkpath   = ~flag_mkpath; 
+			flag_gets2    = ~flag_gets2; 
+			flag_delete   = ~flag_delete; 
+			flag_mkserver = ~flag_mkserver; 
+			flag_redirect = ~flag_redirect; 
+			flag_popen3   = ~flag_popen3; 
+			flag_launch   = ~flag_launch; 
+			flag_filter   = ~flag_filter; 
+			flag_tcp      = ~flag_tcp; 
+	}
+	for(++args;*args;++args)
+		if(!strcmp(*args,"all"))
+		{
+			flag_mkpath   = ~flag_mkpath; 
+			flag_gets2    = ~flag_gets2; 
+			flag_delete   = ~flag_delete; 
+			flag_mkserver = ~flag_mkserver; 
+			flag_redirect = ~flag_redirect; 
+			flag_popen3   = ~flag_popen3; 
+			flag_launch   = ~flag_launch; 
+			flag_filter   = ~flag_filter; 
+			flag_tcp      = ~flag_tcp; 
+			flag_terminal = ~flag_terminal; 
+		}
+		else if(!strcmp(*args,"mkpath"))
+			flag_mkpath = ~flag_mkpath;
+		else if(!strcmp(*args,"gets2"))
+			flag_gets2 = ~flag_gets2;
+		else if(!strcmp(*args,"delete"))
+			flag_delete = ~flag_delete;
+		else if(!strcmp(*args,"mkserver"))
+			flag_mkserver = ~flag_mkserver;
+		else if(!strcmp(*args,"redirect"))
+			flag_redirect = ~flag_redirect;
+		else if(!strcmp(*args,"popen3"))
+			flag_popen3 = ~flag_popen3;
+		else if(!strcmp(*args,"launch"))
+			flag_launch = ~flag_launch;
+		else if(!strcmp(*args,"filter"))
+			flag_filter = ~flag_filter;
+		else if(!strcmp(*args,"tcp"))
+			flag_tcp = ~flag_tcp;
+		else if(!strcmp(*args,"terminal"))
+			flag_terminal = ~flag_terminal;
+		else
+		{
+			fprintf(stderr,"test: error: fatal: '%s' is not a recognised test suite.\n",*args);
+			fprintf(stderr,"test: error: fatal: valid test suites are:\n");
+			fprintf(stderr,"all, mkpath, gets2, delete, mkserver, redirect, popen3, launch, filter, tcp, terminal\n");
+			quit(1);
+		}
+	
+//	printf("mkpath: %x\ngets2: %x\ndelete: %x\n",flag_mkpath,flag_gets2,flag_delete);
+//	printf("mkserver: %x\nredirect: %x\npopen3: %x\n",flag_mkserver,flag_redirect,flag_popen3);
+//	printf("launch: %x\nfilter: %x\ntcp: %x\n",flag_launch,flag_filter,flag_tcp);
+//	printf("terminal: %x\n\n",flag_terminal);
 
-	test_popen3();
-	test_launch();
-	test_filter(); 
-	test_tcp(); 
+	if(flag_mkpath)
+		test_mkpath(); 
+	if(flag_gets2)
+		test_gets2();
+	if(flag_delete)
+		test_delete();
+	if(flag_mkserver)
+		test_mkserver();
 
-	test_terminal(); 
+	if(flag_redirect)
+		test_redirect();
+
+	if(flag_popen3)
+		test_popen3();
+	if(flag_launch)
+		test_launch();
+	if(flag_filter)
+		test_filter(); 
+
+	if(flag_tcp)
+		test_tcp(); 
+
+	if(flag_terminal)
+		test_terminal(); 
 
 	quit(0);
 	return 0;
