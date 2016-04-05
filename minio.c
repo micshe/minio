@@ -23,6 +23,10 @@
 
 #include"minio.h"
 
+/* global variables */
+static off_t minio_cwd_offset = 0;
+
+/* public api */ 
 int close2(int fd)
 {
 	int cache;
@@ -262,6 +266,24 @@ ssize_t read2(int fd, unsigned char*buf, size_t len)
 	ssize_t err;
 
 	errno = 0;
+
+	if(fd==-1)
+	{
+		fd = open(".",O_RDONLY|O_CLOEXEC);
+		if(fd==-1)
+			return -1;
+
+		ssize_t err;
+		lseek(fd,minio_cwd_offset,SEEK_SET);
+		err = readentry(fd,(char*)buf,len);
+
+		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
+
+		close2(fd);
+
+		return err;
+	} 
+
 	err = recv(fd,buf,len,MSG_DONTWAIT|MSG_NOSIGNAL);
 	if(err>=0)
 		return err;
@@ -291,6 +313,24 @@ ssize_t gets2(int fd, char*buf, size_t len)
 #endif
 
 	errno = 0;
+
+	if(fd==-1)
+	{
+		fd = open(".",O_RDONLY|O_CLOEXEC);
+		if(fd==-1)
+			return -1;
+
+		ssize_t err;
+		lseek(fd,minio_cwd_offset,SEEK_SET);
+		err = readentry(fd,buf,len);
+
+		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
+
+		close2(fd);
+
+		return err;
+	}
+
 	err = readuntil(fd,(unsigned char*)buf,len);
 	if(err>=0)
 		return err;
@@ -356,7 +396,7 @@ ssize_t writeall(int fd, unsigned char*buf, size_t len)
 
 ssize_t filename(int fd, char*buf, size_t len)
 {
-	int err; 
+	ssize_t err; 
 	dev_t dev;
 	ino_t ino;	
 	struct stat meta;
@@ -365,6 +405,18 @@ ssize_t filename(int fd, char*buf, size_t len)
 	{
 		errno = ENOMEM;
 		return -1;
+	}
+
+	errno = 0;
+
+	if(fd==-1)
+	{
+		fd = open(".",O_RDONLY|O_CLOEXEC);
+		if(fd==-1)
+			return -1; 
+		err = filename(fd,buf,len); 
+		close2(fd); 
+		return err;
 	}
 
 	err = fstat(fd,&meta);
@@ -416,7 +468,10 @@ fail:
 	close2(up);
 	return -1;	
 } 
+
+#if 0
 static off_t minio_cwd_offset = 0;
+
 void cwdseek(off_t offset) { if(offset>=0) minio_cwd_offset = offset; }
 off_t cwdtell(void) { return minio_cwd_offset; } 
 int cwdgets(char*buf,size_t len)
@@ -516,6 +571,120 @@ fail:
 	close2(fd);
 	return -1;
 }
+#else
+int chdirfd(int fd)
+{
+	off_t offset;
+	offset = lseek(fd,0,SEEK_CUR);
+
+	int err;
+	err = fchdir(fd);
+	if(err==-1)
+		return -1;
+
+	minio_cwd_offset = offset; 
+	return 0;
+}
+int chdir2(char*path, int flags)
+{
+	int fd;
+	/* flags is here for O_NOFOLLOW, no other flags matter */
+	fd = open(path,O_RDONLY|O_CLOEXEC|(flags&O_NOFOLLOW));
+	if(fd==-1)
+		return -1;
+
+	int err;
+	err = chdirfd(fd);
+
+	close2(fd);
+	return err;	
+} 
+ssize_t cwdfilename(char*buf,size_t len) 
+{ 
+	int err;
+	int fd;
+
+	errno=0;
+	fd = open(".",O_RDONLY|O_CLOEXEC);
+	if(fd==-1)
+		return -1;
+	err = filename(fd,buf,len); 
+	close2(fd);
+	return err;
+}
+int chdirup(void) 
+{
+	int err;
+
+	char name[8192];
+	err = cwdfilename(name,8192);
+	if(err==-1)
+		return -1;
+
+	int fd;
+	fd = open("..",O_RDONLY|O_CLOEXEC);
+	if(fd==-1)
+		return -1;
+
+	char buf[8192];
+	for(;;)
+	{
+		err = readentry(fd,buf,8192);
+		if(err==0)
+		{
+			errno = ENOENT;
+			goto fail;
+		}
+		if(err==-1)
+			goto fail;
+
+		if(!strcmp(buf,name))
+			break;
+	}
+
+	err=chdirfd(fd);
+	if(err==-1)
+		goto fail; 
+	close(fd);
+
+	return 0;
+fail:
+	close2(fd);
+	return -1;
+}
+int cd(int fs, char*path, int flags)
+{
+	errno=ENOTSUP;
+	return -1;
+}
+int cdup(int fs)
+{
+	errno=ENOTSUP;
+	return -1; 
+}
+
+off_t seek(int fd, off_t offset)
+{
+	errno = 0;
+
+	if(fd==-1)
+	{
+		minio_cwd_offset = offset;
+		return minio_cwd_offset;
+	}
+
+	return lseek(fd,offset,SEEK_SET);
+}
+off_t tell(int fd)
+{
+	errno = 0;
+
+	if(fd==-1)
+		return minio_cwd_offset;
+
+	return lseek(fd,0,SEEK_CUR);
+}
+#endif
 
 #if 0
 int rmdir2(char*path)
@@ -551,7 +720,7 @@ int delete(char*path)
 		return 0;
 
 	int fd;
-	fd = cwdopen(O_NOFOLLOW);
+	fd = open(".",O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
 	if(fd==-1)
 		return -1;
 	err = chdir2(path,O_NOFOLLOW);
@@ -563,7 +732,8 @@ int delete(char*path)
 	stack = 0;
 	while(stack>=0)
 	{
-		err = cwdgets(buf,8192);
+		//err = cwdgets(buf,8192);
+		err = gets2(-1,buf,8192);
 		if(err==-1)
 			continue;
 		if(err==0)
@@ -571,7 +741,8 @@ int delete(char*path)
 			if(stack==0)
 				break;
 #if 1
-			err = cwdfilename(buf,8192);
+			//err = cwdfilename(buf,8192);
+			err = filename(-1,buf,8192);
 			if(err==-1)
 				break;
 	
@@ -767,9 +938,27 @@ int isonline(int fd)
 	return (data.revents & POLLERR)!=POLLERR && 
 	       (data.revents & POLLHUP)!=POLLHUP; 
 }
-int redirect(int src, int dst, int flags)
+int redirect(int src, int dst, int flags) /* consider renaming rd() so it is analogus to cd() */
 {
 	int err;
+
+	if(src==-1 && dst==-1)
+		/* equivalent to chdir(".") or fchdir(open(".",O_RDONLY)); */
+		return seek(-1,0);
+	if(src==-1)
+	{
+		err = fchdir2(dst);
+		if(err==0)
+			close2(dst);
+		return err;
+	}
+	if(dst==-1)
+	{
+		dst = open(".",O_RDONLY|O_CLOEXEC);
+		if(dst==-1)
+			return -1; 
+	}
+
 	err = dup2(dst,src);
 	if(err==-1)
 		return -1;
