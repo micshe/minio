@@ -24,12 +24,24 @@ ssize_t filename(int fd, char*buf, size_t len);
 int take(int fd, int flags);
 int give(int fd, int payload);
 
+#if 0
 void cwdseek(off_t offset);
 off_t cwdtell(void);
 int cwdgets(char*buf,size_t len);
 int cwdopen(int flags);
 int chdirfd(int fd);
 int chdirup(void);
+#else
+int chdir2(char*path,int flags);
+int chdirfd(int fd);
+int chdirup(void);
+
+int cd(int fd, char*path,int flags);
+int cdup(int fd);
+
+off_t seek(int fd, off_t offset);
+off_t tell(int fd);
+#endif
 
 int delete(char*path);
 

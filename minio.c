@@ -947,7 +947,7 @@ int redirect(int src, int dst, int flags) /* consider renaming rd() so it is ana
 		return seek(-1,0);
 	if(src==-1)
 	{
-		err = fchdir2(dst);
+		err = chdirfd(dst);
 		if(err==0)
 			close2(dst);
 		return err;
