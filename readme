@@ -48,7 +48,7 @@ module to be of any practical use.
 filesystem module
 -----------------
 open2(), mkpath(), mkserver(), filename(), delete(),
-cwdseek(), cwdtell(), cwdgets(), cwdfilename(), chdir2(), chdirfd(), chdirup()
+cd(), cdup(), filename()
 
 
 networking module
@@ -64,7 +64,7 @@ popen3(), launch(), filter()
 file descriptor module
 ----------------------
 canread(), canwrite(), waitread(), waitwrite(), isonline()
-print(), printva(), puts2(), write2(), read2(), gets2(), 
+print(), printva(), puts2(), write2(), read2(), gets2(), seek(), tell() 
 simplex(), duplex(), give(), take(), redirect(), close2(),
 blocking(),nonblocking(),cloexec(),noncloexec(),getflags(),setflags()
 crash()
@@ -130,52 +130,27 @@ using chdir2() and chdirup(), so not safe to use in a
 multithreading environment.
 
 
-  int cwdseek(off_t offset);
+  int cd(int fd, char*path, int flags);
 
-repositions the read-head of the current working 
-directory reader to an offset.  this offset must 
-be either 0, or an offset previously returned by 
-cwdtell().
+changes the file descriptor directory.  flags can be either 0,
+or O_NOFOLLOW, which will prevent cd() from entering
+a symlinked directory.  
 
-  
-  int cwdtell(void);
+use -1 as the fd to cd the current-working-directory.
+this function must be used to change the cwd in order for 
+seek,tell,gets,cdup to function correctly when accessing
+the current-working-directory.  
 
-returns the position of the read-head of the current 
-working directory reader.  this offset can be used
-with cwdseek() to return to this location in the cwd
-at a later time.
+returns 0 on success, -1 on failure.
 
 
-  int cwdgets(char*buffer,size_t length);
+  int chdirup(int fd);
 
-reads an entry from the cwd and writes the filename
-to @buffer.  returns 0 on success, -1 on failure.
-
-
-  int cwdfilename(char*buffer,size_t length);
-
-attempts to determine the name of the current working
-directory in its parent directory.  if the name can be 
-determined, it is written to @buffer.  may fail, depending
-on permissions of parent directory.  returns 0 on success, 
--1 on failure.
-
-
-  int chdir2(char*path, int flags);
-
-cd's the current working directory.  flags can be either 0,
-or O_NOFOLLOW, which will prevent chdir2() from entering
-a symlinked directory.  this function must be used to change
-the cwd in order for cwdseek,cwdtell,cwdgets,chdirup to 
-function correctly.  returns 0 on success, -1 on failure.
-
-
-  int chdirup(void);
-
-cd's to the parent of the current working directory, and
-repositions the current-working-directory-reader's read-head
-to be at the entry after the directory that has just been
-exited.  returns 0 on success, -1 on failure.
+cd's to the parent of the file descriptor directory, and
+repositions the fd's read-head to be at the entry after 
+the directory that has just been exited.  
+use -1 as the fd to cd the current-working-directory.  
+returns 0 on success, -1 on failure.
 
 
   int tcp4(short port, int flags);
@@ -263,6 +238,31 @@ directory and writes the filename to the buffer, truncating
 if nessesary.  null terminates the buffer before returning.  
 returns the number of characters written to the buffer on 
 success, or -1 on failure.
+
+
+  int seek(int fd, off_t offset);
+
+repositions the read-write head of an fd to a new location
+in the file.  if the file is a storage file, any byte offset
+can be used.  if the file is a directory file, only 0 or 
+values returned by tell() on the same file descriptor should 
+be passed as offsets.
+
+to seek the read head of the current-working-directory, pass
+-1 as the fd.
+
+returns 0 on success, -1 on error.
+
+
+  off_t tell(int fd);
+
+reports the position the read-write head of an fd in terms of
+the number of bytes since the start of the file.  
+to get the positon of the read head of the current-working-directory, 
+pass -1 as the fd.
+
+returns the byte offset of the read-head on success, -1 on error.
+
 
   simplex(int fd[2], int flags);
   duplex(int fd[2], int flags);
@@ -379,14 +379,14 @@ future work
 - consider introducing insert2()/remove2() and inserts()/removes() functions 
   for inserting and removing text from a file, without overwriting or leaving 
   blank regions.
+  (remove() is a C89 function for delete/unlink, this might be confusing)
 - introduce join,split,fuse,wrap file-descriptor routing operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
 
 - consider introducing a tmpfile function, that creates a randomly named
   file (without the user having to pass a mutable template string), or an
   unlinked file (for use as a growable buffer/shared memory)
-  (remove() is a C89 function for delete/unlink, this might be confusing)
 - consider introducing attach()/detatch() wrappers around mmap, following the
   shmio approach.  no need for shmgive/shmtake/shmshare-- those can be done
-  via passing the file-descriptors.
+  via passing the file-descriptors.  will require linking with -lrt.
 
