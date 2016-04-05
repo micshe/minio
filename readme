@@ -345,6 +345,82 @@ returns 0 on success, -1 on failure.
   character();
 
 
+patterns
+********
+
+ int newfile(char*file,int flags,int perm);
+ {
+   int err;
+   err = mkpath(file);
+   if(err==0)
+      rmdir(file);
+
+   return open(file,flags|O_CREAT,perm);
+ }
+ int fd;
+ fd = newfile("/new/path/to/new/file",O_RDWR,0666);
+
+
+ int pipeline[2]; 
+ filter(pipeline[0],"...",-1,NULL);
+ filter(pipeline[0],"...",-1,NULL);
+ filter(pipeline[0],"...",-1,NULL);
+
+
+ void join(int lhs,int rhs)
+ {
+   int upr,upw;
+   upr=dup(lhs);
+   upw=dup(rhs);
+
+   filter(upr,"cat -",upw,NULL);
+
+   int dnr,dnw;
+   dnr=dup(lhs);
+   dnw=dup(rhs);
+
+   filter(dwr,"cat -",dnw,NULL);
+
+   close2(lhs);
+   close2(rhs);
+ } 
+ void split(int fd, int channels[2])
+ {
+   int pull[2];
+   simplex(pull,0);
+
+   int push[2];
+   simplex(push,0);
+
+   int upr;
+   upr = dup(fd);
+   filter(upr,"cat -",pull[1],NULL);
+
+   int upw;
+   upw = dup(fd);
+   filter(push[0],"cat -",upw,NULL);
+
+   channels[0] = pull[0];
+   channels[1] = push[1];
+
+   close2(fd); 
+ } 
+ void stream(int lhs, int rhs)
+ {
+   int dst;
+   dst = dup(rhs);
+
+   off_t cache;
+   cache = tell(rhs);
+
+   pid_t pid;
+   filter(lhs,"cat -",dst,&pid); 
+   waitpid(pid,NULL,0);
+
+   seek(rhs,cache);
+ }
+
+
 tutorial
 ******** 
 todo: make a tty markdown renderer utility (pushable to 
