@@ -390,3 +390,29 @@ future work
   shmio approach.  no need for shmgive/shmtake/shmshare-- those can be done
   via passing the file-descriptors.  will require linking with -lrt.
 
+- consider introducing a markdown function, for performing markdown based
+  tty colour/typeface formatting.  should follow the print()/printva format.
+  leading whitespace should be preserved.  possibly with an snmarkdown
+  print-to-string variant as well.
+- consider introducing a centre function, for automatically getting the tty
+  width, and centring text.  should be 'aware' enough of tty control characters
+  to not count them as taking up space (thus making it compatible with an 
+  snmarkdown print-to-string function).  possibly should be markdown.  if the
+  fd is not a tty, should default to centring on 80 characters, or accept a
+  user specified width, where 0=>default=>80.  tabs have to be translated to 
+  spaces.
+- consider introducing a justify function, for automatically getting the tty
+  width, and justifying text.  should be 'aware' enough of tty control characters
+  to not count them as taking up space (thus making it compatible with an 
+  snmarkdown print-to-string function).  possibly should be markdown.  if the
+  fd is not a tty, should default to centring on 80 characters, or accept a
+  user specified width, where 0=>default=>80.  tabs have to be translated to 
+  spaces.
+- consider introducing a rightalign function, for automatically getting the tty
+  width, and rightaligning text.  should be 'aware' enough of tty control characters
+  to not count them as taking up space (thus making it compatible with an 
+  snmarkdown print-to-string function).  possibly should be markdown.  if the
+  fd is not a tty, should default to centring on 80 characters, or accept a
+  user specified width, where 0=>default=>80.  tabs have to be translated to 
+  spaces.
+
