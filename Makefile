@@ -2,7 +2,7 @@ DESTDIR=
 PREFIX=/usr/local
 CFLAGS=-Wall
 
-all: static shared
+all: static shared hlib
 
 minio.o: minio.c
 	@$(CC) -c minio.c $(CFLAGS) -o minio.o 
@@ -15,43 +15,31 @@ libminio.so: minio.o
 	@echo "building shared minio library (libminio.so)"
 	@$(CC) -shared -fPIC minio.o -o libminio.so $(LDFLAGS) 
 
-minio-hlib.h:
-	@echo "building #include -hlib library (minio-hlib.h)"
+minio-hlib.h: minio.c minio.h
+	@echo "generating #include -hlib library (minio-hlib.h)"
+	
 	@cp minio.h minio-hlib.h
+	
 	@echo                        >> minio-hlib.h
 	@echo "#ifndef MINIO_HLIB_H" >> minio-hlib.h
 	@echo "#define MINIO_HLIB_H" >> minio-hlib.h
 	@echo "#ifdef __cplusplus"   >> minio-hlib.h
 	@echo 'extern "C" {'         >> minio-hlib.h
 	@echo "#endif"               >> minio-hlib.h
-	@echo cat minio.c            >> minio-hlib.h
+	
+	@cat minio.c                 >> minio-hlib.h
+	
 	@echo "#ifdef __cplusplus"   >> minio-hlib.h
 	@echo '}'                    >> minio-hlib.h
 	@echo "#endif"               >> minio-hlib.h
 	@echo "#endif"               >> minio-hlib.h
 
-	#@echo \'make hlib\' will only generate minio-hlib.h 
-
-install-hlib: minio-hlib.h install-header
-	@echo installing minio-hlib.h into $(DESTDIR)$(PREFIX)/include
-	@mkdir -p $(DESTDIR)$(PREFIX)/include
-	@cp minio-hlib.h $(DESTDIR)$(PREFIX)/include/minio-hlib.h
-	@chmod 644 $(DESTDIR)$(PREFIX)/include/minio-hlib.h
-	@echo '  to use minio-hlib.h in another program,'
-	@echo '  set CFLAGS="-I$(DESTDIR)$(PREFIX)/include"'
-	@echo '  and #include<minio-hlib.h> in *one* of your .c files'
-	@echo '(just #include<minio.h> as normal in the other .c files)'
-	@echo 
-
-uninstall-hlib:
-	@echo uninstalling minio-hlib.h from $(DESTDIR)$(PREFIX)/include
-	@rm -f $(DESTDIR)$(PREFIX)/include/minio-hlib.h || true 
-
 clean:
-	@echo "removing minio.o, libminio.a, libminio.so, test"
+	@echo "removing minio.o, libminio.a, libminio.so, minio-hlib.h, test"
 	@rm -f minio.o 2> /dev/null || true
 	@rm -f libminio.a 2> /dev/null || true
 	@rm -f libminio.so 2> /dev/null || true
+	@rm -f minio-hlib.h 2> /dev/null || true
 	@rm -f test 2> /dev/null || true
 	@chmod -R 755 tmpdir0 2> /dev/null || true
 	@rm -r tmpdir0 2> /dev/null || true
@@ -68,6 +56,7 @@ test: minio.o test.c
 
 static: libminio.a
 shared: libminio.so
+hlib: minio-hlib.h
 
 install-header:
 	@echo installing minio.h into $(DESTDIR)$(PREFIX)/include
@@ -97,7 +86,18 @@ install-shared: install-header shared
 	@echo 
 	@echo run \'ldconfig\' now to add libminio.so to the shared library database.
 
-install: install-static install-shared 
+install-hlib: install-header hlib
+	@echo installing minio-hlib.h into $(DESTDIR)$(PREFIX)/include
+	@mkdir -p $(DESTDIR)$(PREFIX)/include
+	@cp minio-hlib.h $(DESTDIR)$(PREFIX)/include/minio-hlib.h
+	@chmod 644 $(DESTDIR)$(PREFIX)/include/minio-hlib.h
+	@echo '  to use minio-hlib.h in another program,'
+	@echo '  set CFLAGS="-I$(DESTDIR)$(PREFIX)/include"'
+	@echo '  and #include<minio-hlib.h> in *one* of your .c files'
+	@echo '(just #include<minio.h> as normal in the other .c files)'
+	@echo 
+
+install: install-static install-shared install-hlib
 
 uninstall-header:
 	@echo uninstalling minio.h from $(DESTDIR)$(PREFIX)/include
@@ -111,7 +111,11 @@ uninstall-shared:
 	@echo uninstalling libminio.so from $(DESTDIR)$(PREFIX)/lib
 	@rm -f $(DESTDIR)$(PREFIX)/lib/libminio.so || true
 
-uninstall: uninstall-static uninstall-shared uninstall-header
+uninstall-hlib:
+	@echo uninstalling minio-hlib.h from $(DESTDIR)$(PREFIX)/include
+	@rm -f $(DESTDIR)$(PREFIX)/include/minio-hlib.h || true 
+
+uninstall: uninstall-static uninstall-shared uninstall-hlib uninstall-header
 
 options:
 	@echo these are the current configuration options for minio:
@@ -125,7 +129,7 @@ options:
 help:
 	@echo minio makefile help 
 	@echo
-	@echo \'make\' will build libminio.so and libminio.a
+	@echo \'make\' will build libminio.so, libminio.a, minio-hlib.h
 	@echo \'make clean\' will delete all the compiled minio files from this directory.  it will *not* uninstall libminio.so or libminio.a
 	@echo \'make test\' build minio and test the library.  it will not install anything.
 	@echo \'make help\' will show this options page
@@ -134,6 +138,7 @@ help:
 	@echo 
 	@echo \'make static\' will only build libminio.a
 	@echo \'make shared\' will only build libminio.so
+	@echo \'make hlib\' will only generatre minio-hlib.h
 	@echo
 	@echo \'make options\' will list the defaults that control how minio will be built, and where it will install to.
 	@echo these defaults can be overridden by assinging them values from the commandline, like so:
@@ -145,13 +150,14 @@ help:
 	@echo '  (remember to pass the same PREFIX value for uninstalling that you did for installing)'
 	@echo
 	@echo more fine-grained control is provided by:
-	@echo \'make install-static\', \'make install-shared\', \'make install-header\',
-	@echo \'make uninstall-static\', \'make uninstall-shared\', \'make uninstall-header\'
+	@echo \'make install-static\', \'make install-shared\', \'make install-hlib\', \'make install-header\',
+	@echo \'make uninstall-static\', \'make uninstall-shared\', \'make uninstall-hlib\', \'make uninstall-header\'
 	@echo \(which all do as their names suggest\)
 	@echo
 
 .PHONY: \
 all options help test clean \
 uninstall uninstall-shared uninstall-static uninstall-header \
-install install-shared install-staic install-header
+install install-shared install-staic install-header \
+hlib install-hlib uninstall-hlib
 
