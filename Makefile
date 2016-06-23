@@ -1,6 +1,6 @@
 DESTDIR=
 PREFIX=/usr/local
-CFLAGS=-Wall
+CFLAGS=-Wall -Wextra
 
 all: static shared hlib
 

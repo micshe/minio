@@ -48,7 +48,7 @@ module to be of any practical use.
 filesystem module
 -----------------
 open2(), mkpath(), mkserver(), filename(), delete(),
-cd(), cdup(), filename()
+cd(), cdup()
 
 
 networking module

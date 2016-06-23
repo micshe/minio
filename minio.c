@@ -10,16 +10,19 @@
 #include<dirent.h>
 #include<poll.h>
 
+#include<netinet/in.h>  /* */
+#include<netinet/tcp.h> /* */
+#include<netdb.h>       /* getaddrinfo() */
+
 #include<unistd.h>
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<stdarg.h>
 #include<string.h>
 #include<errno.h>
 
-#include<netinet/in.h>  /* */
-#include<netinet/tcp.h> /* */
-#include<netdb.h>       /* getaddrinfo() */
+#include<limits.h>
 
 #include"minio.h"
 
@@ -88,9 +91,8 @@ int mkpath(char*path, mode_t mode)
 	if(path[l-1]=='/')
 		path[l-1]='\0';
 
-	int count;
-	count = 0;
-	int i;
+	size_t count = 0;
+	size_t i;
 	/* i=1 to skip leading '/' if there is one */
 	for(i=1;i<l;++i)
 		if(path[i]=='/')
@@ -98,6 +100,7 @@ int mkpath(char*path, mode_t mode)
 			path[i]='\0';
 				err = mkdir(path,mode);
 				if(err==-1 && errno!=EACCES && errno!=EEXIST)
+					/* FIXME do we want to keep this return-signature? */
 					return -(count+1);
 				++count; 
 			path[i]='/';
@@ -105,10 +108,10 @@ int mkpath(char*path, mode_t mode)
 	/* make the final entry */
 	err = mkdir(path,mode);
 	if(err==-1)
+		/* FIXME do we want to keep this return-signature? */
 		return -(count+1);
 
-	errno = 0;
-	return 0;
+	return ((errno=0),0);
 }
 int mkserver(char*path, int flags)
 {
@@ -172,6 +175,7 @@ static ssize_t recvuntil(int fd,unsigned char*buf, size_t len)
 	return recv(fd,buf,i,MSG_WAITALL); 
 }
 #endif
+#if 0
 static ssize_t readuntil(int fd,unsigned char*buf, size_t len)
 {
 	ssize_t err;
@@ -205,6 +209,40 @@ static ssize_t readuntil(int fd,unsigned char*buf, size_t len)
 	errno = 0;
 	return i;
 }
+#else
+static size_t readuntil(int fd,unsigned char*buf,size_t len)
+{
+	ssize_t err;
+
+	size_t i; 
+	for(i=0;i<len;i+=err)
+	{
+		waitread(fd,-1);
+		err = read(fd,buf+i,1);
+		if(err<0)
+		{
+			if(errno==EWOULDBLOCK && errno==EINTR && errno==EAGAIN /* && errno!=ERETRY */)
+				continue;
+			else if(errno==EINVAL||errno==EISDIR)
+				/* do not alter @buf */
+				return 0;
+			else
+			{
+				buf[i]='\0';
+				return i;
+			}
+		}
+
+		if(buf[i]=='\n'||buf[i]=='\0')
+			break;
+	}
+	buf[++i]='\0';
+
+	errno = 0;
+	return i;
+}
+#endif
+#if 0
 static ssize_t readentry(int fd, char*buf, size_t len)
 {
 #if 0
@@ -261,6 +299,55 @@ retry:
 	errno = 0;
 	return l; 
 } 
+#else
+static size_t readentry(int fd, char*buf, size_t len)
+{
+	struct dirent*ent;
+
+	DIR*dp;
+	off_t offset;
+	size_t l;
+
+	int tmpfd;
+	tmpfd = dup(fd);
+	if(tmpfd==-1)
+		/* do not change @buf */
+		return 0;
+
+	dp = fdopendir(tmpfd);
+	if(dp==NULL)
+		/* do not change @buf */
+		return 0;
+
+retry:
+	ent = readdir(dp);
+	if(ent!=NULL)
+	{
+		offset = telldir(dp);
+		lseek(fd,offset,SEEK_SET);
+
+		/* skip . and .. */ 
+		if(ent->d_name[0] == '.' && ent->d_name[1] == '\0')
+			goto retry;
+		if(ent->d_name[0] == '.' && ent->d_name[1] == '.' && ent->d_name[2] == '\0')
+			goto retry;
+
+		strncpy(buf,ent->d_name, len);
+		l = strlen(ent->d_name);
+		if(l > len-1)
+			/* manually null terminate because strncpy does not */
+			buf[len-1]='\0'; 
+	}
+	else
+		l = 0;
+
+	closedir(dp);
+
+	errno = 0;
+	return l; 
+} 
+#endif
+#if 0
 ssize_t read2(int fd, unsigned char*buf, size_t len)
 {
 	ssize_t err;
@@ -299,7 +386,57 @@ ssize_t read2(int fd, unsigned char*buf, size_t len)
 
 	errno = 0; 
 	return readentry(fd,(char*)buf,len);
-} 
+}
+#else
+size_t read2(int fd, unsigned char*buf, size_t len)
+{
+	ssize_t err;
+	size_t e;
+
+	if(fd==-1)
+	{
+		fd = open(".",O_RDONLY|O_CLOEXEC);
+		if(fd==-1)
+			return -1;
+
+		lseek(fd,minio_cwd_offset,SEEK_SET);
+		e = readentry(fd,(char*)buf,len); 
+		/* FIXME roll into readentry? */
+		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
+
+		close2(fd);
+
+		return e;
+	}
+
+	if(len>SSIZE_MAX)
+	{
+		e = read2(fd,buf,SSIZE_MAX);
+		if(e<SSIZE_MAX)
+			return e;
+		if(errno!=0)
+			return e;
+
+		buf = buf + SSIZE_MAX;
+		len = len - SSIZE_MAX;
+	} 
+
+	err = ((errno=0),recv(fd,buf,len,MSG_DONTWAIT|MSG_NOSIGNAL));
+	if(err>=0)
+		return err;
+	if(err<0 && errno != ENOTSOCK)
+		return 0;
+
+	err = ((errno=0),read(fd,buf,len));
+	if(err>=0)
+		return err;
+	if(err==-1 && errno!=EISDIR)
+		return 0;
+
+	return readentry(fd,(char*)buf,len);
+}
+#endif
+#if 0
 ssize_t gets2(int fd, char*buf, size_t len)
 {
 	ssize_t err; 
@@ -340,7 +477,38 @@ ssize_t gets2(int fd, char*buf, size_t len)
 	errno = 0;
 	return readentry(fd,buf,len);
 }
+#else
+size_t gets2(int fd, char*buf, size_t len)
+{
+	size_t err; 
 
+	if(fd==-1)
+	{
+		fd = open(".",O_RDONLY|O_CLOEXEC);
+		if(fd==-1)
+			return -1;
+
+		lseek(fd,minio_cwd_offset,SEEK_SET);
+		err = readentry(fd,buf,len);
+		/* FIXME roll into readentry? */
+		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
+
+		close2(fd);
+
+		return err;
+	}
+
+	err = readuntil(fd,(unsigned char*)buf,len);
+	if(err>0)
+		return err;
+	if(errno!=EISDIR)
+		return 0;
+
+	return readentry(fd,buf,len);
+}
+#endif
+
+#if 0
 ssize_t readall(int fd, unsigned char*buf, size_t len)
 {
 	ssize_t err;
@@ -367,6 +535,46 @@ ssize_t readall(int fd, unsigned char*buf, size_t len)
 	} 
 	return len; 
 }
+#else
+size_t readall(int fd, unsigned char*buf, size_t len)
+{
+	ssize_t err;
+	size_t e;
+
+	if(len>SSIZE_MAX)
+	{
+		e = readall(fd,buf,SSIZE_MAX);
+		if(e<SSIZE_MAX)
+			return e;
+
+		buf = buf + SSIZE_MAX;
+		len = len - SSIZE_MAX;
+	}
+
+	err = ((errno=0),recv(fd,buf,len,MSG_WAITALL|MSG_NOSIGNAL));
+	if(err>=0)
+		return e; 
+	if(err<0 && errno != ENOTSOCK)
+		return 0;
+
+	size_t i;
+	for(i=0;i<len;)
+	{
+		waitread(fd,-1);
+		err = ((errno=0),read(fd,buf+i,len-i));
+		if(err<0)
+		{
+			if(errno==EWOULDBLOCK || errno==EAGAIN || errno==EINTR)
+				continue;
+			else
+				return i;
+		} 
+		i+=err;
+	} 
+	return len; 
+}
+#endif
+#if 0
 ssize_t writeall(int fd, unsigned char*buf, size_t len)
 {
 	ssize_t err;
@@ -393,6 +601,33 @@ ssize_t writeall(int fd, unsigned char*buf, size_t len)
 	} 
 	return len; 
 }
+#else
+size_t writeall(int fd, unsigned char*buf, size_t len)
+{
+	ssize_t err;
+	err = ((errno=0),send(fd,buf,len,MSG_WAITALL|MSG_NOSIGNAL));
+	if(err>=0)
+		return err;
+	if(err<0 && errno != ENOTSOCK)
+		return 0;
+
+	size_t i;
+	for(i=0;i<len;)
+	{
+		waitwrite(fd,-1);
+		err = ((errno=0),write(fd,buf+i,len-i));
+		if(err<0)
+		{
+			if(errno==EWOULDBLOCK || errno==EAGAIN || errno==EINTR)
+				continue;
+			else
+				return i;
+		} 
+		i+=err;
+	} 
+	return len; 
+}
+#endif
 
 ssize_t filename(int fd, char*buf, size_t len)
 {
@@ -449,7 +684,7 @@ ssize_t filename(int fd, char*buf, size_t len)
 	}
 
 	char tmp[8192];
-	while(readentry(up,tmp,8192) != -1)
+	while(readentry(up,tmp,8192) != 0)
 	{
 		err = fstatat(up,tmp,&meta,AT_SYMLINK_NOFOLLOW);
 		if(err==-1)
@@ -1114,6 +1349,7 @@ int launch(char*cmd,pid_t*pid)
 	return -1;
 }
 
+#if 0
 ssize_t write2(int fd, unsigned char*buf, size_t len)
 {
 	ssize_t err;
@@ -1124,6 +1360,30 @@ ssize_t write2(int fd, unsigned char*buf, size_t len)
 	errno = 0; 
 	return write(fd,buf,len); 
 }
+#else
+size_t write2(int fd, unsigned char*buf, size_t len)
+{
+	ssize_t err;
+	size_t e;
+
+	if(len>SSIZE_MAX)
+	{
+		e = write2(fd,buf,SSIZE_MAX);
+		if(e<SSIZE_MAX)
+			return e;
+
+		buf = buf + SSIZE_MAX;
+		len = len - SSIZE_MAX;
+	}
+
+	err = ((errno=0),send(fd,buf,len,MSG_NOSIGNAL));
+	if(err<0 && errno != ENOTSOCK)
+		return 0;
+
+	return ((errno=0),write(fd,buf,len)); 
+}
+#endif
+#if 0
 int puts2(int fd, char*string)
 {
 	int len;
@@ -1131,6 +1391,15 @@ int puts2(int fd, char*string)
 
 	return writeall(fd,(unsigned char*)string,len);
 }
+#else
+size_t puts2(int fd, char*string)
+{
+	size_t len;
+	len = strlen(string); 
+
+	return writeall(fd,(unsigned char*)string,len);
+}
+#endif
 int printva(int fd, char*string, va_list*args)
 {
 	int err;
@@ -1277,7 +1546,7 @@ int area(int tty, int*x,int*y)
 	int err;
 
 	struct winsize w;
-	err = ioctl(0,TIOCGWINSZ, &w);
+	err = ioctl(tty,TIOCGWINSZ, &w);
 	if(err==-1)
 		return -1;
 
@@ -1370,7 +1639,7 @@ int input(int tty, char buf[8])
 		*/
 	} 
 	/* else MORE then one character read */
-	else if(buf[0]>127)
+	else if(buf[0]<0)
 		/* we read a utf8 character */
 		goto pass;
 	else if(buf[2]>='A' && buf[2]<='D')
@@ -1436,7 +1705,7 @@ int character(char buf[8])
 	else if((buf[0] >= ' '||buf[0]==9||buf[0]==13) && buf[0] < 127)
 		/* regular char (including space,tab,enter -- discluding backspace) */
 		return buf[0];
-	else if(buf[0]>127)
+	else if(buf[0]<0)
 		/* it is a utf8 character, which we must parse and package into the return int */
 		return *((int*)buf);
 	else	

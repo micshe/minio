@@ -16,8 +16,17 @@ int open2(char*path, int flags, ...);
 int mkpath(char*path, mode_t mode);
 int mkserver(char*path, int flags);
 
+#if 0
 ssize_t read2(int fd, unsigned char*buf, size_t len);
 ssize_t gets2(int fd, char*buf, size_t len);
+#else
+size_t read2(int fd, unsigned char*buf, size_t len);
+size_t gets2(int fd, char*buf, size_t len); 
+size_t readall(int fd, unsigned char*buf, size_t len);
+size_t write2(int fd, unsigned char*buf, size_t len);
+size_t puts2(int fd, char*buf); 
+size_t writeall(int fd, unsigned char*buf, size_t len); 
+#endif
 
 ssize_t filename(int fd, char*buf, size_t len);
 
