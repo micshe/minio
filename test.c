@@ -12,13 +12,13 @@
 
 #include<unistd.h>
 
-void test_terminal(void)
+void test_terminal_output(void)
 {
 	char buf[8];
 
 	charmode(0);
 
-	print(1,"\nterminal-test\n\nhello: %s\n","substring");
+	print(1,"\nterminal-test\n\ntest: print: %s\n","substring");
 	print(1,"\npress any key to continue\n");
 
 	input(0,NULL);
@@ -28,8 +28,8 @@ void test_terminal(void)
 	char key[16];
 	input(0,key);
 
-	print(1,"key: %c-%c-%c-%c\n",key[0],key[1],key[2],key[3]);
-	print(1,"key: %d-%d-%d-%d\n",key[0],key[1],key[2],key[3]);
+	print(1,"key: %c:%c:%c:%c",key[0],key[1],key[2],key[3]);
+	print(1,"\nkey: %hhu:%hhu:%hhu:%hhu\n",key[0],key[1],key[2],key[3]);
 
 	bold(1);
 	if(isctrlalt(key))
@@ -194,6 +194,11 @@ void test_terminal(void)
 
 	print(1,"press any key to continue...\n");
 	input(0,buf);
+}
+
+void test_terminal_input(void)
+{
+	char key[8];
 
 	charmode(0);
 
@@ -204,8 +209,8 @@ void test_terminal(void)
 
 		input(0,key);
 
-		print(1,"key: %c-%c-%c-%c\n",key[0],key[1],key[2],key[3]);
-		print(1,"key: %d-%d-%d-%d\n",key[0],key[1],key[2],key[3]);
+		print(1,"key: %c:%c:%c:%c",key[0],key[1],key[2],key[3]);
+		print(1,"\nkey: %hhu:%hhu:%hhu:%hhu\n",key[0],key[1],key[2],key[3]);
 
 		bold(1);
 		if(isctrlalt(key))
@@ -300,8 +305,8 @@ void test_tcp()
 			crash("fail: server: could not create tcp/ip4 server");
 		printf("pass: server: created tcp/ip4 server\n");
 
-		struct sockaddr_storage tmp;
-		size_t len;
+		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
+		size_t len=0;
 		cln = accept(srv,(struct sockaddr*)&tmp,&len);
 		if(cln == -1)
 			crash("fail: server: accept");
@@ -346,8 +351,8 @@ void test_tcp()
 			crash("fail: server: could not create tcp/ip6 server");
 		printf("pass: server: created tcp/ip6 server\n");
 
-		struct sockaddr_storage tmp;
-		size_t len;
+		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
+		size_t len=0;
 		cln = accept(srv,(struct sockaddr*)&tmp,&len);
 		if(cln == -1)
 			crash("fail: server: accept");
@@ -392,7 +397,7 @@ void test_tcp()
 
 	printf("test: pulling response to http get /\n");
 	err = gets2(cln,buf,128);
-	if(err==-1||err==0)
+	if(err==0)
 		crash("fail: gets2 could not read from fd\n"); 
 	buf[8191] = '\0';
 	printf("debug: gets2 pulled:\n%s\n",buf);
@@ -427,7 +432,7 @@ void test_popen3(void)
 	printf("test: read pipeline output\n");
 	char buf[8192];
 	err = gets2(subp[0],buf,64);
-	if(err==-1)
+	if(err==0)
 	{
 		perror("fail: read pipeline output");
 		exit(1);
@@ -454,7 +459,7 @@ void test_launch(void)
 	printf("test: read pipeline output\n");
 	char buf[8192];
 	err = gets2(sp,buf,64);
-	if(err==-1)
+	if(err==0)
 	{
 		perror("fail: read pipeline output");
 		exit(1);
@@ -509,7 +514,7 @@ void test_filter(void)
 	printf("test: read pipeline output\n");
 	char buf[8192];
 	err = gets2(subp[0],buf,64);
-	if(err==-1)
+	if(err==0)
 	{
 		perror("fail: read pipeline output");
 		exit(1);
@@ -569,8 +574,8 @@ void test_redirect()
 
 	printf("test: reading from redirected fd\n");
 	err = gets2(ch1[0],buf,8192);
-	printf("debug: err=%d\n",err);
-	if(err==-1)
+	printf("debug: err=%u\n",err);
+	if(err==0)
 	{
 		perror("fail: gets2");
 		exit(1);
@@ -778,7 +783,7 @@ void test_mkserver(void)
 	errno = 0;
 	err = gets2(cln,buf,8192);
 	printf("debug: gets2 returned %d: %s\n",err,strerror(errno));
-	if(err==-1)
+	if(err==0)
 	{
 		perror("fail: gets2");
 		exit(1);	
@@ -799,7 +804,7 @@ void test_mkserver(void)
 	errno = 0;
 	err = gets2(con,buf,8192);
 	printf("debug: gets2 returned %d: %s\n",err,strerror(errno));
-	if(err==-1)
+	if(err==0)
 	{
 		perror("fail: gets2");
 		exit(1);	
@@ -1126,12 +1131,12 @@ void test_gets2()
 	{
 		err = gets2(fd,buf,8192);
 		printf("debug: gets2 returned %d\n",err);
-		if(err==-1)
+		if(err==0 && errno!=0) /* => error */
 		{
 			perror("fail: gets2");
 			exit(1);
 		}
-		if(err==0)
+		if(err==0 && errno==0) /* => EOF */
 			break;
 		printf("debug: file: %s\n",buf);
 	}
@@ -1146,7 +1151,7 @@ void test_gets2()
 int main(int argc, char*args[])
 {
 	int flag_mkpath=0, flag_gets2=0, flag_delete=0, flag_mkserver=0, flag_redirect=0, flag_popen3=0, flag_launch=0, flag_filter=0, flag_tcp=0; 
-	int flag_terminal=0;
+	int flag_input=0,flag_output=0;
 
 	if(argc==1)
 	{
@@ -1172,7 +1177,8 @@ int main(int argc, char*args[])
 			flag_launch   = ~flag_launch; 
 			flag_filter   = ~flag_filter; 
 			flag_tcp      = ~flag_tcp; 
-			flag_terminal = ~flag_terminal; 
+			flag_input    = ~flag_input; 
+			flag_output   = ~flag_output; 
 		}
 		else if(!strcmp(*args,"mkpath"))
 			flag_mkpath = ~flag_mkpath;
@@ -1193,12 +1199,19 @@ int main(int argc, char*args[])
 		else if(!strcmp(*args,"tcp"))
 			flag_tcp = ~flag_tcp;
 		else if(!strcmp(*args,"terminal"))
-			flag_terminal = ~flag_terminal;
+		{
+			flag_input = ~flag_input;
+			flag_output = ~flag_output;
+		}
+		else if(!strcmp(*args,"input"))
+			flag_input = ~flag_input;
+		else if(!strcmp(*args,"output"))
+			flag_output = ~flag_output;
 		else
 		{
 			fprintf(stderr,"test: error: fatal: '%s' is not a recognised test suite.\n",*args);
 			fprintf(stderr,"test: error: fatal: valid test suites are:\n");
-			fprintf(stderr,"all, mkpath, gets2, delete, mkserver, redirect, popen3, launch, filter, tcp, terminal\n");
+			fprintf(stderr,"all, mkpath, gets2, delete, mkserver, redirect, popen3, launch, filter, tcp, terminal, input, output\n");
 			quit(1);
 		}
 	
@@ -1229,8 +1242,10 @@ int main(int argc, char*args[])
 	if(flag_tcp)
 		test_tcp(); 
 
-	if(flag_terminal)
-		test_terminal(); 
+	if(flag_output)
+		test_terminal_output();
+	if(flag_input)
+		test_terminal_input();
 
 	quit(0);
 	return 0;

@@ -443,18 +443,15 @@ issues
 future work
 ***********
 - introduce #ifdef'd support for SOCK_CLOEXEC (covers all major OSs bar OSX)
-- introduce mutex()/atfork() based emulation of SOCK_CLOEXEC (for OSX)
-  (this will get thread-fork-exec safety, but not thread-exec safety)
-  (this will SIGNIFICANTLY increase the size of minio)
-  (the addition of atfork() handlers based on mutexes will make fork unsafe 
-  for use in sighandlers)
+- introduce #ifdef'd support for OSX's version of SOCK_CLOEXEC, that applies
+  to all sockets created by an existing socket.
 - introduce posix ____at() style filesystem functions (this will require 
   mocking up a connectat() and bindat() pair of functions)
 - introduce a broadcast() function for writing the same string to a batch of
   file descriptors
 - consider introducing insert2()/remove2() and inserts()/removes() functions 
   for inserting and removing text from a file, without overwriting or leaving 
-  blank regions.
+  blank regions
   (remove() is a C89 function for delete/unlink, this might be confusing)
 - introduce join,split,fuse,wrap file-descriptor routing operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
@@ -464,7 +461,7 @@ future work
   unlinked file (for use as a growable buffer/shared memory)
 - consider introducing attach()/detatch() wrappers around mmap, following the
   shmio approach.  no need for shmgive/shmtake/shmshare-- those can be done
-  via passing the file-descriptors.  will require linking with -lrt.
+  via passing the file-descriptors
 
 - consider introducing a markdown function, for performing markdown based
   tty colour/typeface formatting.  should follow the print()/printva format.

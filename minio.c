@@ -7,12 +7,9 @@
 #include<termios.h>    /* for charmode, linemode */
 #include<sys/socket.h>
 #include<sys/un.h>     /* for mkserver */
-#include<dirent.h>
-#include<poll.h>
-
-#include<netinet/in.h>  /* */
-#include<netinet/tcp.h> /* */
 #include<netdb.h>       /* getaddrinfo() */
+#include<dirent.h>
+#include<poll.h> 
 
 #include<unistd.h>
 
@@ -120,7 +117,7 @@ int mkserver(char*path, int flags)
 	struct sockaddr_un addr;
 	if(strlen(path)>=108)
 		/* because linux (and only linux, it seems) cannot handle sockfile names longer then this */
-		return -1;
+		return ((errno=ENAMETOOLONG),-1);
 	sck = socket(AF_LOCAL,SOCK_STREAM,0);
 	if(sck==-1)
 		return -1;
@@ -135,6 +132,7 @@ int mkserver(char*path, int flags)
 	if(err==-1)
 		goto fail;
 
+	memset(&addr,0,sizeof(struct sockaddr_un));
 	addr.sun_family=AF_LOCAL;
 	strcpy(addr.sun_path,path);
 	err = bind(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_un));
@@ -343,8 +341,7 @@ retry:
 
 	closedir(dp);
 
-	errno = 0;
-	return l; 
+	return ((errno=0),l); 
 } 
 #endif
 #if 0
@@ -388,7 +385,7 @@ ssize_t read2(int fd, unsigned char*buf, size_t len)
 	return readentry(fd,(char*)buf,len);
 }
 #else
-size_t read2(int fd, unsigned char*buf, size_t len)
+size_t read2(int fd, unsigned char*buf, size_t len) /* FIXME rename: pull() */
 {
 	ssize_t err;
 	size_t e;
@@ -478,7 +475,7 @@ ssize_t gets2(int fd, char*buf, size_t len)
 	return readentry(fd,buf,len);
 }
 #else
-size_t gets2(int fd, char*buf, size_t len)
+size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 {
 	size_t err; 
 
@@ -536,7 +533,7 @@ ssize_t readall(int fd, unsigned char*buf, size_t len)
 	return len; 
 }
 #else
-size_t readall(int fd, unsigned char*buf, size_t len)
+size_t readall(int fd, unsigned char*buf, size_t len) /* FIXME rename: get() */
 {
 	ssize_t err;
 	size_t e;
@@ -602,7 +599,7 @@ ssize_t writeall(int fd, unsigned char*buf, size_t len)
 	return len; 
 }
 #else
-size_t writeall(int fd, unsigned char*buf, size_t len)
+size_t writeall(int fd, unsigned char*buf, size_t len) /* FIXME rename: put() */
 {
 	ssize_t err;
 	err = ((errno=0),send(fd,buf,len,MSG_WAITALL|MSG_NOSIGNAL));
@@ -889,8 +886,33 @@ fail:
 }
 int cd(int fs, char*path, int flags)
 {
-	errno=ENOTSUP;
-	return -1;
+	int err;
+
+	/*
+	FIXME
+	since we're providing a flags arg,
+	we could support an mkpath()-based
+	O_CREAT|O_EXCL behaviour.
+	*/
+
+	int fd;
+	fd = openat(fs,path,flags&O_CLOEXEC);
+	if(fd<0)
+		return fd;
+
+	struct stat meta;
+	err = fstat(fd,&meta);
+	if(err<0)
+		return err;
+
+	if(!S_ISDIR(meta.st_mode))
+		return ((errno=ENOTDIR),-1);
+
+	err = redirect(fs,fd);
+	if(err<0)
+		return err;
+	
+	return ((errno=0),0);
 }
 int cdup(int fs)
 {
@@ -1361,7 +1383,7 @@ ssize_t write2(int fd, unsigned char*buf, size_t len)
 	return write(fd,buf,len); 
 }
 #else
-size_t write2(int fd, unsigned char*buf, size_t len)
+size_t write2(int fd, unsigned char*buf, size_t len) /* FIXME rename: push() */
 {
 	ssize_t err;
 	size_t e;
@@ -1392,7 +1414,7 @@ int puts2(int fd, char*string)
 	return writeall(fd,(unsigned char*)string,len);
 }
 #else
-size_t puts2(int fd, char*string)
+size_t puts2(int fd, char*string) /* FIXME rename: putln() */
 {
 	size_t len;
 	len = strlen(string); 
@@ -1410,11 +1432,12 @@ int printva(int fd, char*string, va_list*args)
 	if(err<0)
 		return err;
 
-	int len;
+	size_t len;
 	len = strlen(buf); 
 
-	err = puts2(fd,buf); 
-	if(err<len)
+	size_t e;
+	e = puts2(fd,buf);
+	if(e<len)
 		/* print can't be resumed */
 		return -1;
 
@@ -1615,6 +1638,51 @@ int input(int tty, char buf[8])
 	if(err==0||err==-1)
 		goto fail;
 
+	if(err>1 && buf[0]<0)
+	{
+		/* it was a utf8 char or an xterm:alt+... key press */
+
+		if((buf[0]&0x7F)=='B' && buf[2]=='\0')
+		{
+			/*
+			in xterm:
+			alt+(ascii values between 27 and A)
+			alt+shift+(ascii values between 27 and A)
+			are reported with a leading B character
+
+			ctrl+alt+letter
+			are reported with a leading B character
+
+			(because ctrl+alt+letter characters are reported, 
+			 by terminals as ascii values between 1 and 27) 
+
+			we translate it into the same input keycodes
+			that most other sofware terminals use.
+			*/ 
+			buf[0]='\033';
+			buf[1]=buf[1]&0x7F;
+		}
+		else if((buf[0]&0x7F)=='C' && buf[2]=='\0')
+		{ 
+			/* 
+			in xterm:
+			alt+(ascii values between A and 127)
+			alt+shift+(ascii values between A and 127) 
+			are reported with a leading C character,
+			and begin from where the "leading B" characters
+			finish (ascii value A).
+
+			we translate it into the same input keycodes
+			that most other sofware terminals use.
+			*/
+			buf[0]='\033';
+			buf[1]=(buf[1]&0x7F)+'A'-1;
+		} 
+		/*
+		FIXME determine if these xterm-specific keycodes clash with utf8 characters.
+		*/
+	}
+
 	if(buf[0]!='\033')
 		/* we read a control+char or shift+char or regular char key press */
 		goto pass;
@@ -1625,7 +1693,7 @@ int input(int tty, char buf[8])
 		usleep(1000);
 		err += read(tty,buf+1,1);
 		if(err==1+0||err==1+-1)
-			/* it was an escape press */
+			/* it was an escapekey press */
 			goto pass;
 
 		if(buf[1]!='[')
@@ -1705,9 +1773,17 @@ int character(char buf[8])
 	else if((buf[0] >= ' '||buf[0]==9||buf[0]==13) && buf[0] < 127)
 		/* regular char (including space,tab,enter -- discluding backspace) */
 		return buf[0];
+#if 0
+	/* special xterm parser: */
+	else if((unsigned char)buf[0] == 195 && (unsigned char)buf[1] > 127 && buf[2] == 0)
+		/* FIXME this conflicts with utf8 symbols FIXME */
+		/* it is an alt+ keyboard combination, and we are in xterm's default mode */
+		return ((unsigned char)buf[1])-128; 
+	/* :special xterm parser */
 	else if(buf[0]<0)
 		/* it is a utf8 character, which we must parse and package into the return int */
 		return *((int*)buf);
+#endif
 	else	
 		/* not a char */
 		return 0;
@@ -1739,24 +1815,31 @@ void crash(char*string,...)
 	_exit(EXIT_FAILURE);
 }
 
-static struct sockaddr_storage* dns(char*hostname, struct sockaddr_storage*addr)
+static int dns(char*hostname, struct sockaddr_storage*addr)
 {
 	struct addrinfo hints;
 	struct addrinfo*servinfo;
-	struct sockaddr_storage *h;
 
-	memset(&hints, 0, sizeof(hints));
+	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC; 
 	hints.ai_socktype = SOCK_STREAM;
 
-	getaddrinfo(hostname,NULL,&hints,&servinfo);
+	int err;
+	err = getaddrinfo(hostname,NULL,&hints,&servinfo);
+	if(err<0)
+	{
+		printf("FAIL: %s\n",gai_strerror(err));
+		return err;
+	}
 
-	/* FIXME is this valid? */ 
-	h = (struct sockaddr_storage*) servinfo->ai_addr;
-	memcpy(addr,h,sizeof(struct sockaddr_storage));
-     
+	if(addr!=NULL)
+	{
+		memset(addr,0,sizeof(struct sockaddr_storage));
+		memcpy(addr,servinfo->ai_addr,servinfo->ai_addrlen);
+	}
+ 
 	freeaddrinfo(servinfo);
-	return addr;
+	return ((errno=0),0);
 } 
 int dial(char*hostname, short port, int flags)
 {
@@ -1766,7 +1849,11 @@ int dial(char*hostname, short port, int flags)
 	ipv4 = (struct sockaddr_in*)&addr;
 	ipv6 = (struct sockaddr_in6*)&addr;
 
-	dns(hostname,&addr);
+	int err;
+	err = dns(hostname,&addr);
+	if(err<0)
+		/* FIXME how to pass dns specific errors? */
+		return -1;
 
 	int domain;
 	domain = addr.ss_family;
@@ -1778,7 +1865,6 @@ int dial(char*hostname, short port, int flags)
 	int sck; 
 	sck = socket(domain,SOCK_STREAM,0); 
 
-	int err;
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(sck,F_SETFD,flags&O_CLOEXEC);
@@ -1815,6 +1901,7 @@ int tcp4(short port, int flags)    /* tcp/ip4 */
 		goto fail;
 
 	struct sockaddr_in addr;
+	memset(&addr,0,sizeof(struct sockaddr_in));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;	
 	addr.sin_port = htons(port);	
@@ -1849,6 +1936,7 @@ int tcp6(short port, int flags)    /* tcp/ip6 */
 		goto fail;
 
 	struct sockaddr_in6 addr;
+	memset(&addr,0,sizeof(struct sockaddr_in6));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;	
 	addr.sin6_port = htons(port);	
