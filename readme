@@ -435,10 +435,15 @@ todo: make a minimal ls clone, to demonstrait directory reading
 
 issues
 ******
-- gets2 and read2 do not advance to the next directory entry after reading in FreeBSD.
-- all alt+character presses in FreeBSD report as alt+shift+character.  
-  can't rely on having alt+shift+character being discernable from alt+character.
-
+- gets2 and read2 do not advance to the next directory entry after reading
+  in FreeBSD.
+- FreeBSD xterm erroniously parses alt+char,alt+shift+char in its default
+  configuration.  parses correctly when set to 'meta-sends-escape'.  what
+  is different about FreeBSDs default xterm configuration and Ubuntu's?
+  - FreeBSD xfce4-terminal parses input correctly,
+  - FreeBSD uxterm correctly parses alt+char,alt+shift+char,ctrl+alt+char
+  - FreeBSD console ignores the alt in alt+char, alt+shift+char,ctrl+alt+char
+    keypresses but otherwise parses correctly,
 
 future work
 ***********
