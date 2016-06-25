@@ -282,7 +282,7 @@ void crash(char*error, ...)
 
 	fprintf(stderr,": %d: %s\n",err,strerror(err));
 
-	exit(1);
+	_exit(1);
 }
 #endif
 
@@ -303,7 +303,7 @@ void test_tcp()
 		printf("test: server: create tcp/ip4 server\n");
 		srv = tcp4(9889,0);
 		if(srv==-1)
-			crash("fail: server: could not create tcp/ip4 server");
+			crash("fail: server: could not create tcp/ip4 server: %s\n",strerror(errno));
 		printf("pass: server: created tcp/ip4 server\n");
 
 		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
@@ -329,7 +329,7 @@ void test_tcp()
 		printf("test: client: dial tcp/ip4 server\n");
 		cln = dial("localhost",9889,0);
 		if(cln==-1)
-			crash("fail: client: could not dial tcp/ip4 server\n");
+			crash("fail: client: could not dial tcp/ip4 server: %s\n",strerror(errno));
 		printf("pass: client: dialed tcp/ip4 sever\n");
 
 		printf("test: client: gets2() string\n");
@@ -865,7 +865,7 @@ void test_delete(void)
 	}
 	printf("pass: delete empty directory\n");
 
-	system("rm -r tmpdir");
+	system("rm -r tmpdir 2>/dev/null");
 
 	printf("test: make a 1-level directory\n");
 	err = mkdir("tmpdir",0755);
@@ -913,7 +913,7 @@ void test_delete(void)
 	}
 	printf("pass: delete a 1-level directory\n");
 
-	system("rm -r tmpdir");
+	system("rm -r tmpdir 2>/dev/null");
 
 	printf("test: make an N-level directory\n");
 	mkdir("tmpdir",0755);
@@ -1070,8 +1070,7 @@ void test_delete(void)
 	printf("pass: attempt to delete an N-level directory containing an un-deletable subdir failed\n");
 
 	chmod("tmpdir/tmpdir1/tmpdir8",0755);
-	system("rm -r tmpdir");
-
+	system("rm -r tmpdir 2>/dev/null");
 }
 void test_gets2()
 {

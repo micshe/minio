@@ -376,10 +376,10 @@ size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 	}
 
 	err = readentry(fd,buf,len);
-	if(errno==ENOTDIR || errno==EINVAL)
+	if(errno==ENOTDIR || errno==ESPIPE || errno==EINVAL)
 		/* 
-		FreeBSD libc returns errno=EINVAL if fd is
-		not a directory
+		FreeBSD libc readir returns errno=EINVAL if 
+		fd is not a directory 
 		*/
 		return readuntil(fd,(unsigned char*)buf,len);
 
@@ -664,23 +664,31 @@ int delete(char*path)
 	while(stack>=0 && stack<SSIZE_MAX-1)
 	{
 		/*
-		FIXME
 		the ordering of the contents of a
 		directory may change after an entry
-		is unlinked.
+		is unlinked.  due to minio's FreeBSD
+		gets2() workaround it does under
+		FreeBSD.
 
-		if this turns out to be the case,
-		we should reset the seek-head after
-		every unlink.
+		because we're unlinking every file we
+		come accross, we don't need proper
+		directory-walking behaviour, we can
+		rewind and 'let the files come to us'.
 
 		deleting a directory does not require
 		proper cdup() behaviour, we just
 		use this function to illustrait
 		cdup().
 		*/
+		err = lseek(head,0,SEEK_SET);
+		if(err<0)
+			break;
 		e = gets2(head,tmp,8192);
 		if(e>0)
 		{
+			printf("read file: %s\n",tmp);
+
+#if 0
 			/* if it is a file */
 			err = unlinkat(head,tmp,0);
 			if(err==0)
@@ -690,28 +698,39 @@ int delete(char*path)
 			err = cd(head,tmp,O_CLOEXEC|O_NOFOLLOW);
 			if(err==0)
 				++stack;
+#else
+			/* if it is a directory */
+			err = cd(head,tmp,O_CLOEXEC|O_NOFOLLOW);
+			if(err==0)
+			{
+				++stack;
+				continue;
+			}
 
+			/* if it is a file */
+			err = unlinkat(head,tmp,0);
+			if(err<0)
+				break;
+#endif
 			continue;
 		}
 
 		if(stack==0)
 			break;
-		else
-		{
-			e = filename(head,tmp,8192);
-			if(e==0)
-				break;
 
-			err = cdup(head,O_CLOEXEC|O_NOFOLLOW);
-			if(err<0)
-				break;
+		e = filename(head,tmp,8192);
+		if(e==0)
+			break;
 
-			err = unlinkat(head,tmp,AT_REMOVEDIR);
-			if(err<0)
-				break;
+		err = cdup(head,O_CLOEXEC|O_NOFOLLOW);
+		if(err<0)
+			break;
 
-			--stack;
-		}
+		err = unlinkat(head,tmp,AT_REMOVEDIR);
+		if(err<0)
+			break;
+
+		--stack;
 	}
 	err = rmdir(path);
 
@@ -1507,7 +1526,18 @@ int dial(char*hostname, short port, int flags)
 	if(err<0)
 		goto fail;
 
+#ifdef __FreeBSD__
+	/*
+	FreeBSD libc connect does not seem to support
+	sizeof(struct sockaddr_storage)
+	*/
+	err = connect(sck, (struct sockaddr*)&addr, 
+	              (domain==AF_INET)?
+	              sizeof(struct sockaddr_in):
+	              sizeof(struct sockaddr_in6));
+#else 
 	err = connect(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_storage));
+#endif
 	if(err<0)
 		goto fail;
 
