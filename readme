@@ -116,8 +116,8 @@ connect(2) function.
 attempts to determine the name of the file described by @fd.
 if the name can be determined, it is written to @buffer.
 currently only works for directory-fds.  may fail, depending
-on permissions of parent directory.  returns 0 on sucess, -1
-on failure.
+on permissions of parent directory.  returns the number of
+bytes written to @buffer on sucess, 0 on failure.
 
 
   int delete(char*path);
@@ -132,8 +132,8 @@ multithreading environment.
 
   int cd(int fd, char*path, int flags);
 
-changes the file descriptor directory.  flags can be either 0,
-or O_NOFOLLOW, which will prevent cd() from entering
+changes the file descriptor directory.  flags can be any of 0,
+O_CLOEXEC, or O_NOFOLLOW, which will prevent cd() from entering
 a symlinked directory.  
 
 use -1 as the fd to cd the current-working-directory.
@@ -144,11 +144,13 @@ the current-working-directory.
 returns 0 on success, -1 on failure.
 
 
-  int chdirup(int fd);
+  int chdirup(int fd, int flags);
 
 cd's to the parent of the file descriptor directory, and
 repositions the fd's read-head to be at the entry after 
-the directory that has just been exited.  
+the directory that has just been exited.  flags can be
+either 0 or O_CLOEXEC.
+
 use -1 as the fd to cd the current-working-directory.  
 returns 0 on success, -1 on failure.
 
@@ -222,22 +224,64 @@ any other kind of connection error.  returns false otherwise.
 
 
   int print(int fd, char*format, ...); 
+
+[todo]
+
+
   int printva(int fd, char*format, va_list*args);
 
-  size_t puts2(int fd, char*string); 
+[todo]
+
+
   size_t write2(int fd, char*buffer, size_t length); 
 
+generic fd buffer-writer function.  if fd is a socket, pipe,
+or regular file, perfoms a posix write until either the buffer
+has been written, or an error condition interrupts the 
+operation.  returns the number of characters written from the
+buffer.  sets errno to the error condition that caused the
+operation to halt, or to 0 if the entire operation completed
+successfully.
+
+
+  size_t puts2(int fd, char*string); 
+
+generic fd string-writer function.  if fd is a socket, pipe,
+or regular file, performs a blocking write until the buffer 
+has been written to the file descriptor.  returns the number 
+of characters written from the buffer.  sets errno to the 
+error condition that caused the operation to halt, or to 0 
+if the entire operation completed successfully.
+
+
   size_t read2(int fd, char*buffer, size_t length); 
+
+generic fd buffer-reader function.  if fd is a socket, pipe,
+or regular file, perfoms a posix read until either the buffer
+has been filled, or an error condition interrupts the 
+operation.  returns the number of characters written to the
+buffer.  sets errno to the error condition that caused the
+operation to halt, or to 0 if the entire operation completed
+successfully.  an end-of-file is indicated by returning 0
+bytes, with an errno of 0.
+
+
   size_t gets2(int fd, char*buffer, size_t length); 
 
 generic fd string-reader function.  if fd is a socket, pipe,
-of regular file, performs a blocking read until either the 
+or regular file, performs a blocking read until either the 
 buffer has been filled, or a \n or \0 is encountered.  if the
 fd is a directory, reads the filename of the next file in the
 directory and writes the filename to the buffer, truncating
 if nessesary.  null terminates the buffer before returning.  
-returns the number of characters written to the buffer on 
-success, or -1 on failure.
+returns the number of characters written to the buffer.  sets
+errno to the error condition that caused the operation to 
+halt, or to 0 if the entire operation completed successfully.
+an end-of-file is indicated by returning 0 bytes, with
+an errno of 0.
+
+to gets2() the next entry of the current-working-directory, 
+pass -1 as the fd.
 
 
   int seek(int fd, off_t offset);
@@ -265,7 +309,13 @@ returns the byte offset of the read-head on success, -1 on error.
 
 
   simplex(int fd[2], int flags);
+
+[todo]
+
+
   duplex(int fd[2], int flags);
+
+[todo]
 
 
   give(int fd, int payload);
@@ -437,7 +487,7 @@ issues
 ******
 - gets2 and read2 do not advance to the next directory entry after reading
   in FreeBSD.
-- FreeBSD xterm erroniously parses alt+char,alt+shift+char in its default
+- FreeBSD-xterm erroniously parses alt+char,alt+shift+char in its default
   configuration.  parses correctly when set to 'meta-sends-escape'.  what
   is different about FreeBSDs default xterm configuration and Ubuntu's?
   - FreeBSD xfce4-terminal parses input correctly,
