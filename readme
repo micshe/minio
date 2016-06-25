@@ -111,7 +111,7 @@ be connected to via minio's open2() function, or the posix
 connect(2) function.
 
 
-  int filename(int fd, char*buffer, size_t length);
+  size_t filename(int fd, char*buffer, size_t length);
 
 attempts to determine the name of the file described by @fd.
 if the name can be determined, it is written to @buffer.
@@ -224,11 +224,11 @@ any other kind of connection error.  returns false otherwise.
   int print(int fd, char*format, ...); 
   int printva(int fd, char*format, va_list*args);
 
-  int puts2(int fd, char*string); 
-  int write2(int fd, char*buffer, size_t length); 
+  size_t puts2(int fd, char*string); 
+  size_t write2(int fd, char*buffer, size_t length); 
 
-  int read2(int fd, char*buffer, size_t length); 
-  int gets2(int fd, char*buffer, size_t length); 
+  size_t read2(int fd, char*buffer, size_t length); 
+  size_t gets2(int fd, char*buffer, size_t length); 
 
 generic fd string-reader function.  if fd is a socket, pipe,
 of regular file, performs a blocking read until either the 
@@ -457,11 +457,12 @@ future work
 - consider replacing read2/readall and write2/writeall with a read and write
   call that emulate the MSG_NOWAIT|MSG_WAITALL, and (possibly) always attempt
   to perform MSG_NOSIGNAL like behaviour.
-  - on OSX this can be done with per-thread signal blocking
+  - on OSX this can be done with per-thread pthread signal blocking
   - on linux this will have to be done by a syscall() to avoid linking with
     the pthread library
   - on FreeBSD|etc this may require the same approach as linux
-- introduce join,split,fuse,wrap file-descriptor routing operations
+- introduce join,split,fuse,wrap,tee,tap,syphon,stream file-descriptor routing 
+  operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
 
 - consider introducing a tmpfile function, that creates a randomly named
@@ -474,26 +475,40 @@ future work
 - consider introducing a markdown function, for performing markdown based
   tty colour/typeface formatting.  should follow the print()/printva format.
   leading whitespace should be preserved.  possibly with an snmarkdown
-  print-to-string variant as well.
+  print-to-string variant as well.  it might be feasible to not filter the
+  markdown symbols, just highlight them, like less does.  this would make the
+  output meaningful if shell-redirected to a file.  it would also make it
+  easier to centre/justify/leftalign/rightalign markdown highlighted text.  
+  maybe it should either colour (if isatty(fd)), else print the symbols.
 - consider introducing a centre function, for automatically getting the tty
   width, and centring text.  should be 'aware' enough of tty control characters
   to not count them as taking up space (thus making it compatible with an 
   snmarkdown print-to-string function).  possibly should be markdown.  if the
   fd is not a tty, should default to centring on 80 characters, or accept a
   user specified width, where 0=>default=>80.  tabs have to be translated to 
-  spaces.
+  spaces.  center should not split words unless the word is longer than a
+  line.
 - consider introducing a justify function, for automatically getting the tty
   width, and justifying text.  should be 'aware' enough of tty control characters
   to not count them as taking up space (thus making it compatible with an 
   snmarkdown print-to-string function).  possibly should be markdown.  if the
   fd is not a tty, should default to centring on 80 characters, or accept a
   user specified width, where 0=>default=>80.  tabs have to be translated to 
-  spaces.
+  spaces.  justify should not split words unless the word is longer than a line.
+- consider introducing a leftalign function, for automatically getting the tty
+  width, and leftaligning text.  should be 'aware' enough of tty control characters
+  to not count them as taking up space (thus making it compatible with an 
+  snmarkdown print-to-string function).  possibly should be markdown.  if the
+  fd is not a tty, should default to centring on 80 characters, or accept a
+  user specified width, where 0=>default=>80.  tabs have to be translated to 
+  spaces.    leftalign should not split words unless the word is longer than a 
+  line.
 - consider introducing a rightalign function, for automatically getting the tty
   width, and rightaligning text.  should be 'aware' enough of tty control characters
   to not count them as taking up space (thus making it compatible with an 
   snmarkdown print-to-string function).  possibly should be markdown.  if the
   fd is not a tty, should default to centring on 80 characters, or accept a
   user specified width, where 0=>default=>80.  tabs have to be translated to 
-  spaces.
+  spaces.  rightalign should not split words unless the word is longer than a 
+  line.
 

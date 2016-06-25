@@ -1030,84 +1030,79 @@ int rmdir2(char*path)
 #endif
 int delete(char*path)
 {
-#if 0
 	int err; 
+	size_t e;
+	char tmp[8192];
+
+	/* if it is a file */
 	err = unlink(path);
 	if(err==0)
-		return 0;
+		return ((errno=0),0);
 
-	int fd;
-	fd = open(".",O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
-	if(fd==-1)
-		return -1;
-	err = chdir2(path,O_NOFOLLOW);
-	if(err==-1)
-		goto fail;
+	/* if it is a directory */
+	int head;
+	head = open(path,O_CLOEXEC|O_NOFOLLOW);
+	if(head<0)
+		return head;
 
-	char buf[8192];
-	ssize_t stack;
-	stack = 0;
-	while(stack>=0)
+	ssize_t stack=0;
+	while(stack>=0 && stack<SSIZE_MAX-1)
 	{
-		//err = cwdgets(buf,8192);
-		err = gets2(-1,buf,8192);
-		if(err==-1)
-			continue;
-		if(err==0)
+		/*
+		FIXME
+		the ordering of the contents of a
+		directory may change after an entry
+		is unlinked.
+
+		if this turns out to be the case,
+		we should reset the seek-head after
+		every unlink.
+
+		deleting a directory does not require
+		proper cdup() behaviour, we just
+		use this function to illustrait
+		cdup().
+		*/
+		e = gets2(head,tmp,8192);
+		if(e>0)
 		{
-			if(stack==0)
-				break;
-#if 1
-			//err = cwdfilename(buf,8192);
-			err = filename(-1,buf,8192);
-			if(err==-1)
-				break;
-	
-			err = chdirup();
-			if(err==-1)
-				break;
+			/* if it is a file */
+			err = unlinkat(head,tmp,0);
+			if(err==0)
+				continue;
 
-			--stack;
-			rmdir(buf);
-			/* just keep going if this fails */ 
+			/* if it is a directory */
+			err = cd(head,tmp,O_CLOEXEC|O_NOFOLLOW);
+			if(err==0)
+				++stack;
+
 			continue;
-#else
-			/* just keep going if this fails */ 
-			rmdir2(".");
-			/* 
-			this may fail as chdirup() won't be
-			able to *find* the name of the cwd,
-			since it's just been deleted.
-			*/
-			err = chdirup();
-			if(err==-1)
-				break;
-			--stack;
-			continue;
-#endif
 		}
-		err = unlink(buf);
-		if(err == 0)
-			continue;
 
-		err = chdir2(buf,O_NOFOLLOW);
-		if(err==-1)
-			/* just keep going if this fails */
-			continue;
-		++stack;
-	} 
-	chdirfd(fd);
-	close(fd);
+		if(stack==0)
+			break;
+		else
+		{
+			e = filename(head,tmp,8192);
+			if(e==0)
+				break;
 
-	/* if there were any errors in the deleting rmdir will report them now */
-	return rmdir(path);
+			err = cdup(head,O_CLOEXEC|O_NOFOLLOW);
+			if(err<0)
+				break;
 
-fail:
-	close2(fd);
-	return -1;
-#else
-	return ((errno=ENOSYS),-1);
-#endif
+			err = unlinkat(head,tmp,AT_REMOVEDIR);
+			if(err<0)
+				break;
+
+			--stack;
+		}
+	}
+	err = rmdir(path);
+
+	close2(head);
+
+	return err;
 }
 
 int simplex(int simplexfd[2],int flags) 
@@ -1221,7 +1216,7 @@ int waitread(int fd, int timelimit)
 	data.events = POLLIN;
 
 	int err;
-	err = poll(&data,1,timeout);
+	err = poll(&data,1,timelimit);
 	if(err==-1)
 		return 0;
 
@@ -1236,7 +1231,7 @@ int waitwrite(int fd,int timelimit)
 	data.events = POLLOUT;
 
 	int err;
-	err = poll(&data,1,timeout);
+	err = poll(&data,1,timelimit);
 	if(err==-1)
 		return 0;
 
