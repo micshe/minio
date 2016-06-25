@@ -5,52 +5,33 @@
 extern "C" {
 #endif
 
-#include<sys/types.h>   /* for size_t ssize_t */
-#include<sys/stat.h>    /* for mode_t */
-#include<fcntl.h>	/* for O_CLOEXEC */
+#include<sys/types.h>   /* for size_t */
+#include<fcntl.h>	/* for O_CLOEXEC O_NONBLOCK O_NOFOLLOW etc */
 #include<stdarg.h>      /* for va_list */
 #include<stdlib.h>	/* for NULL */
 
 int close2(int fd);
 int open2(char*path, int flags, ...);
-int mkpath(char*path, mode_t mode);
+int mkpath(char*path, int mode);
 int mkserver(char*path, int flags);
 
-#if 0
-ssize_t read2(int fd, unsigned char*buf, size_t len);
-ssize_t gets2(int fd, char*buf, size_t len);
-#else
 size_t read2(int fd, unsigned char*buf, size_t len);
 size_t gets2(int fd, char*buf, size_t len); 
 size_t readall(int fd, unsigned char*buf, size_t len);
 size_t write2(int fd, unsigned char*buf, size_t len);
 size_t puts2(int fd, char*buf); 
 size_t writeall(int fd, unsigned char*buf, size_t len); 
-#endif
 
 size_t filename(int fd, char*buf, size_t len);
 
 int take(int fd, int flags);
 int give(int fd, int payload);
 
-#if 0
-void cwdseek(off_t offset);
-off_t cwdtell(void);
-int cwdgets(char*buf,size_t len);
-int cwdopen(int flags);
-int chdirfd(int fd);
-int chdirup(void);
-int chdir2(char*path,int flags);
-int chdirfd(int fd);
-int chdirup(void);
-#else
-
 int cd(int fd, char*path, int flags);
 int cdup(int fd, int flags);
 
 off_t seek(int fd, off_t offset);
 off_t tell(int fd);
-#endif
 
 int delete(char*path);
 

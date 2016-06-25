@@ -1,5 +1,6 @@
 #include"minio.h"
 
+#include<sys/stat.h>
 #include<sys/socket.h>
 #include<netinet/in.h>
 #include<netinet/tcp.h>

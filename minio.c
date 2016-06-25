@@ -38,12 +38,12 @@ int close2(int fd)
 int open2(char*path, int flags, ...)
 {
 	va_list va;
-	mode_t mode;
+	int mode;
 
 	if((flags & O_CREAT)==O_CREAT)
 	{
 		va_start(va,flags); 
-			mode = va_arg(va,mode_t);
+			mode = va_arg(va,int);
 		va_end(va);
 	}
 
@@ -54,23 +54,24 @@ int open2(char*path, int flags, ...)
 		/* because linux (and only linux, it seems) cannot handle sockfile names longer then this */
 		goto fallback;
 	sck = socket(AF_LOCAL,SOCK_STREAM,0);
-	if(sck==-1)
+	if(sck<0)
 		goto fallback;	
 	addr.sun_family=AF_LOCAL;
 	strcpy(addr.sun_path,path);
 	err = connect(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_un));
 
-	fcntl(sck,F_SETFD,flags & O_CLOEXEC);
+	if(flags&O_CLOEXEC)
+		fcntl(sck,F_SETFD,FD_CLOEXEC);
 	fcntl(sck,F_SETFL,flags & (O_NONBLOCK|O_ASYNC|O_APPEND/*|O_DIRECT*//*|O_NOATIME*/));
 
-	if(err!=-1)
+	if(err>=0)
 		return sck;
 
 	close(sck); 
 fallback:
-	return open(path,flags,mode);
+	return ((errno=0),open(path,flags,mode));
 } 
-int mkpath(char*path, mode_t mode)
+int mkpath(char*path, int mode)
 {
 	int err; 
 	char buf[8192];
@@ -96,7 +97,7 @@ int mkpath(char*path, mode_t mode)
 		{
 			path[i]='\0';
 				err = mkdir(path,mode);
-				if(err==-1 && errno!=EACCES && errno!=EEXIST)
+				if(err<0 && errno!=EACCES && errno!=EEXIST)
 					/* FIXME do we want to keep this return-signature? */
 					return -(count+1);
 				++count; 
@@ -104,7 +105,7 @@ int mkpath(char*path, mode_t mode)
 		}
 	/* make the final entry */
 	err = mkdir(path,mode);
-	if(err==-1)
+	if(err<0)
 		/* FIXME do we want to keep this return-signature? */
 		return -(count+1);
 
@@ -119,24 +120,24 @@ int mkserver(char*path, int flags)
 		/* because linux (and only linux, it seems) cannot handle sockfile names longer then this */
 		return ((errno=ENAMETOOLONG),-1);
 	sck = socket(AF_LOCAL,SOCK_STREAM,0);
-	if(sck==-1)
+	if(sck<0)
 		return -1;
 
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(sck,F_SETFD,FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail;	
 	}
 	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC));
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	memset(&addr,0,sizeof(struct sockaddr_un));
 	addr.sun_family=AF_LOCAL;
 	strcpy(addr.sun_path,path);
 	err = bind(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_un));
-	if(err==-1)
+	if(err<0)
 		goto fail; 
 
 	/* 
@@ -145,69 +146,16 @@ int mkserver(char*path, int flags)
 	server though, so it may be out of date 
 	*/
 	err = listen(sck,1024);
+	if(err<0)
+		goto fail;
 
-	return sck;
+	return ((errno=0),sck);
 
 fail:
 	close2(sck);
 	return -1;
 }
 
-#if 0
-static ssize_t recvuntil(int fd,unsigned char*buf, size_t len)
-{
-	unsigned char tmp[8192];
-	ssize_t err;
-
-	err = recv(fd,tmp,len,MSG_PEEK|MSG_DONTWAIT);
-	if(err==-1 && errno==ENOTSOCK)
-		return -1;
-
-	/* FIXME handle errors and retries */
-
-	int i;
-	for(i=0;i<err;++i)
-		if(tmp[i]=='\n'||tmp[i]=='\0')
-			break;
-
-	return recv(fd,buf,i,MSG_WAITALL); 
-}
-#endif
-#if 0
-static ssize_t readuntil(int fd,unsigned char*buf, size_t len)
-{
-	ssize_t err;
-	ssize_t i;
-
-	for(i=0;i<len;i+=err)
-	{
-		waitread(fd,-1);
-		err = read(fd,buf+i,1);
-		if(err==-1)
-		{
-			if(errno==EWOULDBLOCK && errno==EINTR && errno==EAGAIN /* && errno!=ERETRY */)
-				continue;
-			else if(errno==EISDIR)
-				return -1;
-			else
-			{
-				if(i==0)
-					return -1;
-				buf[i]='\0';
-				errno = 0;
-				return i;
-			}
-		}
-
-		if(buf[i]=='\n'||buf[i]=='\0')
-			break;
-	}
-	buf[++i]='\0';
-
-	errno = 0;
-	return i;
-}
-#else
 static size_t readuntil(int fd,unsigned char*buf,size_t len)
 {
 	ssize_t err;
@@ -239,65 +187,6 @@ static size_t readuntil(int fd,unsigned char*buf,size_t len)
 	errno = 0;
 	return i;
 }
-#endif
-#if 0
-static ssize_t readentry(int fd, char*buf, size_t len)
-{
-#if 0
-	unsigned char tmp[8192];
-	void*dir;
-	dir = tmp;
-	struct dirent*ent;
-	ent = dir;
-#else
-	struct dirent*ent;
-#endif
-
-	DIR*dp;
-	off_t offset;
-	ssize_t l;
-
-	int tmpfd;
-	tmpfd = dup(fd);
-	if(tmpfd==-1)
-		return -1;
-
-	dp = fdopendir(tmpfd);
-	if(dp==NULL)
-		return -1;
-
-retry:
-#if 0
-	readdir_r(dp,dir,&ent);
-#else
-	ent = readdir(dp);
-#endif
-	if(ent!=NULL)
-	{
-		offset = telldir(dp);
-		lseek(fd,offset,SEEK_SET);
-
-		/* skip . and .. */ 
-		if(ent->d_name[0] == '.' && ent->d_name[1] == '\0')
-			goto retry;
-		if(ent->d_name[0] == '.' && ent->d_name[1] == '.' && ent->d_name[2] == '\0')
-			goto retry;
-
-		strncpy(buf,ent->d_name, len);
-		l = strlen(ent->d_name);
-		if(l > len-1)
-			/* manually null terminate because strncpy does not */
-			buf[len-1]='\0'; 
-	}
-	else
-		l = 0;
-
-	closedir(dp);
-
-	errno = 0;
-	return l; 
-} 
-#else
 static size_t readentry(int fd, char*buf, size_t len)
 {
 	struct dirent*ent;
@@ -347,48 +236,6 @@ retry:
 
 	return ((errno=0),l); 
 } 
-#endif
-#if 0
-ssize_t read2(int fd, unsigned char*buf, size_t len)
-{
-	ssize_t err;
-
-	errno = 0;
-
-	if(fd==-1)
-	{
-		fd = open(".",O_RDONLY|O_CLOEXEC);
-		if(fd==-1)
-			return -1;
-
-		ssize_t err;
-		lseek(fd,minio_cwd_offset,SEEK_SET);
-		err = readentry(fd,(char*)buf,len);
-
-		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
-
-		close2(fd);
-
-		return err;
-	} 
-
-	err = recv(fd,buf,len,MSG_DONTWAIT|MSG_NOSIGNAL);
-	if(err>=0)
-		return err;
-	if(err==-1 && errno != ENOTSOCK)
-		return -1;
-
-	errno = 0;
-	err = read(fd,buf,len); 
-	if(err>=0)
-		return err;
-	if(err==-1 && errno!=EISDIR)
-		return -1;
-
-	errno = 0; 
-	return readentry(fd,(char*)buf,len);
-}
-#else
 size_t read2(int fd, unsigned char*buf, size_t len) /* FIXME rename: pull() */
 {
 	ssize_t err;
@@ -431,54 +278,11 @@ size_t read2(int fd, unsigned char*buf, size_t len) /* FIXME rename: pull() */
 	err = ((errno=0),read(fd,buf,len));
 	if(err>=0)
 		return err;
-	if(err==-1 && errno!=EISDIR)
+	if(err<0 && errno!=EISDIR)
 		return 0;
 
 	return readentry(fd,(char*)buf,len);
 }
-#endif
-#if 0
-ssize_t gets2(int fd, char*buf, size_t len)
-{
-	ssize_t err; 
-#if 0
-	errno = 0;
-	err = recvuntil(fd,(unsigned char*)buf,len);
-	if(err>=0)
-		return err;
-	if(err==-1 && errno!=ENOTSOCK)
-		return -1;
-#endif
-
-	errno = 0;
-
-	if(fd==-1)
-	{
-		fd = open(".",O_RDONLY|O_CLOEXEC);
-		if(fd==-1)
-			return -1;
-
-		ssize_t err;
-		lseek(fd,minio_cwd_offset,SEEK_SET);
-		err = readentry(fd,buf,len);
-
-		minio_cwd_offset = lseek(fd,0,SEEK_CUR); 
-
-		close2(fd);
-
-		return err;
-	}
-
-	err = readuntil(fd,(unsigned char*)buf,len);
-	if(err>=0)
-		return err;
-	if(err==-1 && errno!=EISDIR)
-		return -1;
-
-	errno = 0;
-	return readentry(fd,buf,len);
-}
-#else
 size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 {
 	size_t err; 
@@ -507,36 +311,7 @@ size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 
 	return readentry(fd,buf,len);
 }
-#endif
 
-#if 0
-ssize_t readall(int fd, unsigned char*buf, size_t len)
-{
-	ssize_t err;
-	errno = 0;
-	err = recv(fd,buf,len,MSG_WAITALL|MSG_NOSIGNAL);
-	if(err>=0)
-		return err; 
-	if(err==-1 && errno != ENOTSOCK)
-		return -1;
-	errno = 0; 
-	size_t i;
-	for(i=0;i<len;)
-	{
-		waitread(fd,-1);
-		err = read(fd,buf+i,len-i);
-		if(err<0)
-		{
-			if(errno==EWOULDBLOCK || errno==EAGAIN || errno==EINTR)
-				continue;
-			else
-				return i;
-		} 
-		i+=err;
-	} 
-	return len; 
-}
-#else
 size_t readall(int fd, unsigned char*buf, size_t len) /* FIXME rename: get() */
 {
 	ssize_t err;
@@ -574,35 +349,6 @@ size_t readall(int fd, unsigned char*buf, size_t len) /* FIXME rename: get() */
 	} 
 	return len; 
 }
-#endif
-#if 0
-ssize_t writeall(int fd, unsigned char*buf, size_t len)
-{
-	ssize_t err;
-	errno = 0;
-	err = send(fd,buf,len,MSG_WAITALL|MSG_NOSIGNAL);
-	if(err>=0)
-		return err;
-	if(err==-1 && errno != ENOTSOCK)
-		return -1;
-	errno = 0; 
-	size_t i;
-	for(i=0;i<len;)
-	{
-		waitwrite(fd,-1);
-		err = write(fd,buf+i,len-i);
-		if(err<0)
-		{
-			if(errno==EWOULDBLOCK || errno==EAGAIN || errno==EINTR)
-				continue;
-			else
-				return i;
-		} 
-		i+=err;
-	} 
-	return len; 
-}
-#else
 size_t writeall(int fd, unsigned char*buf, size_t len) /* FIXME rename: put() */
 {
 	ssize_t err;
@@ -628,7 +374,6 @@ size_t writeall(int fd, unsigned char*buf, size_t len) /* FIXME rename: put() */
 	} 
 	return len; 
 }
-#endif
 
 size_t filename(int fd, char*buf, size_t len)
 {
@@ -698,109 +443,6 @@ fail:
 	return -1;
 } 
 
-#if 0
-static off_t minio_cwd_offset = 0;
-
-void cwdseek(off_t offset) { if(offset>=0) minio_cwd_offset = offset; }
-off_t cwdtell(void) { return minio_cwd_offset; } 
-int cwdgets(char*buf,size_t len)
-{
-	int fd;
-	fd = open(".",O_RDONLY|O_CLOEXEC);
-	if(fd==-1)
-		return -1;
-
-	ssize_t err;
-	lseek(fd,minio_cwd_offset,SEEK_SET);
-	err = gets2(fd,buf,len);
-	cwdseek(lseek(fd,0,SEEK_CUR));
-
-	close2(fd);
-
-	return err;
-}
-int cwdopen(int flags) { return open(".",flags); }
-int chdirfd(int fd)
-{
-	off_t offset;
-	offset = lseek(fd,0,SEEK_CUR);
-
-	int err;
-	err = fchdir(fd);
-	if(err==-1)
-		return -1;
-
-	minio_cwd_offset = offset; 
-	return 0;
-}
-int chdir2(char*path, int flags)
-{
-	int fd;
-	/* flags is here for O_NOFOLLOW, no other flags matter */
-	fd = open(path,O_RDONLY|O_CLOEXEC|(flags&O_NOFOLLOW));
-	if(fd==-1)
-		return -1;
-
-	int err;
-	err = chdirfd(fd);
-
-	close2(fd);
-	return err;	
-} 
-ssize_t cwdfilename(char*buf,size_t len) 
-{ 
-	int err;
-	int fd;
-
-	errno=0;
-	fd = open(".",O_RDONLY|O_CLOEXEC);
-	if(fd==-1)
-		return -1;
-	err = filename(fd,buf,len); 
-	close2(fd);
-	return err;
-}
-int chdirup(void) 
-{
-	int err;
-
-	char name[8192];
-	err = cwdfilename(name,8192);
-	if(err==-1)
-		return -1;
-
-	int fd;
-	fd = open("..",O_RDONLY|O_CLOEXEC);
-	if(fd==-1)
-		return -1;
-
-	char buf[8192];
-	for(;;)
-	{
-		err = readentry(fd,buf,8192);
-		if(err==0)
-		{
-			errno = ENOENT;
-			goto fail;
-		}
-		if(err==-1)
-			goto fail;
-
-		if(!strcmp(buf,name))
-			break;
-	}
-
-	err=chdirfd(fd);
-	if(err==-1)
-		goto fail; 
-	close(fd);
-
-	return 0;
-fail:
-	close2(fd);
-	return -1;
-}
-#else
 static int chdirfd(int fd)
 {
 	off_t offset;
@@ -808,81 +450,12 @@ static int chdirfd(int fd)
 
 	int err;
 	err = fchdir(fd);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	minio_cwd_offset = offset; 
 	return 0;
 }
-#if 0
-int chdir2(char*path, int flags)
-{
-	int fd;
-	/* flags is here for O_NOFOLLOW, no other flags matter */
-	fd = open(path,O_RDONLY|O_CLOEXEC|(flags&O_NOFOLLOW));
-	if(fd==-1)
-		return -1;
-
-	int err;
-	err = chdirfd(fd);
-
-	close2(fd);
-	return err;	
-} 
-ssize_t cwdfilename(char*buf,size_t len) 
-{ 
-	int err;
-	int fd;
-
-	errno=0;
-	fd = open(".",O_RDONLY|O_CLOEXEC);
-	if(fd==-1)
-		return -1;
-	err = filename(fd,buf,len); 
-	close2(fd);
-	return err;
-}
-int chdirup(void) 
-{
-	int err;
-
-	char name[8192];
-	err = cwdfilename(name,8192);
-	if(err==-1)
-		return -1;
-
-	int fd;
-	fd = open("..",O_RDONLY|O_CLOEXEC);
-	if(fd==-1)
-		return -1;
-
-	char buf[8192];
-	for(;;)
-	{
-		err = readentry(fd,buf,8192);
-		if(err==0)
-		{
-			errno = ENOENT;
-			goto fail;
-		}
-		if(err==-1)
-			goto fail;
-
-		if(!strcmp(buf,name))
-			break;
-	}
-
-	err=chdirfd(fd);
-	if(err==-1)
-		goto fail; 
-	close(fd);
-
-	return 0;
-fail:
-	close2(fd);
-	return -1;
-}
-#endif
 int cd(int fs, char*path, int flags)
 {
 	int err;
@@ -915,7 +488,6 @@ int cd(int fs, char*path, int flags)
 }
 int cdup(int fs, int flags)
 {
-#if 1
 	int err;
 
 	char tmp[8192]; 
@@ -973,10 +545,6 @@ fail:
 	errno=err;
 
 	return -1;
-#else
-	errno=ENOTSUP;
-	return -1; 
-#endif
 }
 
 off_t seek(int fd, off_t offset)
@@ -1000,34 +568,7 @@ off_t tell(int fd)
 
 	return lseek(fd,0,SEEK_CUR);
 }
-#endif
 
-#if 0
-int rmdir2(char*path)
-{
-	int err;
-	if(strcmp(path,"."))
-		return rmdir(path);
-
-	int fd;
-	fd = open(path,O_CLOEXEC|O_NOFOLLOW|O_RDONLY);
-	if(fd==-1)
-		return -1;
-
-	char buf[8192];
-	err = filename(fd,buf,8192);
-
-	int up;
-	up = openat(fd,"..",O_CLOEXEC|O_NOFOLLOW|O_RDONLY);
-	close2(fd);
-	if(up==-1)
-		return -1;
-
-	err = unlinkat(up,buf,AT_REMOVEDIR);
-	close2(up);
-	return err;
-}
-#endif
 int delete(char*path)
 {
 	int err; 
@@ -1111,25 +652,25 @@ int simplex(int simplexfd[2],int flags)
 
 	int err;
 	err = socketpair(AF_LOCAL,SOCK_STREAM,0,fd); 
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(fd[0], F_SETFD, FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail;
 		err = fcntl(fd[1], F_SETFD, FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail; 
 	}
 
 	err = fcntl(fd[0], F_SETFL, flags);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	err = fcntl(fd[1], F_SETFL, flags);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	simplexfd[0]=fd[0];
@@ -1148,25 +689,25 @@ int duplex(int duplexfd[2],int flags)
 
 	int err;
 	err = socketpair(AF_LOCAL,SOCK_STREAM,0,fd); 
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(fd[0], F_SETFD, FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail;
 		err = fcntl(fd[1], F_SETFD, FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail; 
 	}
 
 	err = fcntl(fd[0], F_SETFL, flags);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	err = fcntl(fd[1], F_SETFL, flags);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	duplexfd[0]=fd[0];
@@ -1187,7 +728,7 @@ int canread(int fd)
 
 	int err;
 	err = poll(&data,1,0);
-	if(err==-1)
+	if(err<0)
 		return 0;
 
 	return (data.revents & POLLOUT)==POLLOUT &&
@@ -1202,7 +743,7 @@ int canwrite(int fd)
 
 	int err;
 	err = poll(&data,1,0);
-	if(err==-1)
+	if(err<0)
 		return 0;
 
 	return (data.revents & POLLOUT)==POLLOUT && 
@@ -1217,7 +758,7 @@ int waitread(int fd, int timelimit)
 
 	int err;
 	err = poll(&data,1,timelimit);
-	if(err==-1)
+	if(err<0)
 		return 0;
 
 	return (data.revents & POLLIN)==POLLIN && 
@@ -1232,7 +773,7 @@ int waitwrite(int fd,int timelimit)
 
 	int err;
 	err = poll(&data,1,timelimit);
-	if(err==-1)
+	if(err<0)
 		return 0;
 
 	return (data.revents & POLLOUT)==POLLOUT && 
@@ -1247,7 +788,7 @@ int isonline(int fd)
 
 	int err;
 	err = poll(&data,1,0);
-	if(err==-1)
+	if(err<0)
 		return 0;
 
 	return (data.revents & POLLERR)!=POLLERR && 
@@ -1274,7 +815,6 @@ int redirect(int fd, int target, int flags) /* consider renaming rd() so it is a
 			return target; 
 	}
 
-	/* FIXME consider using linux dup3() */
 	err = dup2(target,fd);
 	if(err<0)
 		goto fail;
@@ -1300,8 +840,8 @@ int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid)
 
 	pid_t err;
 	err = fork();
-	if(err==-1)
-		return -1;
+	if(err<0)
+		return err;
 	else if(err==0)
 	{
 		if(pid==NULL)
@@ -1358,7 +898,7 @@ int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid)
 
 	int status;
 	err = waitpid(err,&status,0);
-	if(err==-1)
+	if(err<0)
 		/* false positive */
 		return 0;
 
@@ -1381,13 +921,13 @@ int filter(int pull, char*cmd, int push, pid_t*pid)
 		return popen3(cmd,pull,push,-1,pid);
 
 	err = simplex(channel,O_CLOEXEC);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	if(push==-1&&pull>-1)
 	{ 
 		flags = fcntl(pull,F_GETFD);
-		if(flags==-1)
+		if(flags<0)
 			goto fail;
 		if((flags&FD_CLOEXEC)==FD_CLOEXEC) flags = O_CLOEXEC;
 		flags |= fcntl(pull,F_GETFL); 
@@ -1399,7 +939,7 @@ int filter(int pull, char*cmd, int push, pid_t*pid)
 	if(pull==-1&&push>-1)
 	{
 		flags = fcntl(push,F_GETFD);
-		if(flags==-1)
+		if(flags<0)
 			goto fail;
 		if((flags&FD_CLOEXEC)==FD_CLOEXEC) flags = O_CLOEXEC;
 		flags |= fcntl(push,F_GETFL); 
@@ -1421,7 +961,7 @@ int launch(char*cmd,pid_t*pid)
 
 	int channel[2];
 	err = duplex(channel,O_CLOEXEC);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	err = popen3(cmd,channel[1],channel[1],-1,pid);
@@ -1435,18 +975,6 @@ int launch(char*cmd,pid_t*pid)
 	return -1;
 }
 
-#if 0
-ssize_t write2(int fd, unsigned char*buf, size_t len)
-{
-	ssize_t err;
-	errno = 0; 
-	err = send(fd,buf,len,MSG_NOSIGNAL);
-	if(err==-1 && errno != ENOTSOCK)
-		return -1;
-	errno = 0; 
-	return write(fd,buf,len); 
-}
-#else
 size_t write2(int fd, unsigned char*buf, size_t len) /* FIXME rename: push() */
 {
 	ssize_t err;
@@ -1468,16 +996,6 @@ size_t write2(int fd, unsigned char*buf, size_t len) /* FIXME rename: push() */
 
 	return ((errno=0),write(fd,buf,len)); 
 }
-#endif
-#if 0
-int puts2(int fd, char*string)
-{
-	int len;
-	len = strlen(string); 
-
-	return writeall(fd,(unsigned char*)string,len);
-}
-#else
 size_t puts2(int fd, char*string) /* FIXME rename: putln() */
 {
 	size_t len;
@@ -1485,7 +1003,6 @@ size_t puts2(int fd, char*string) /* FIXME rename: putln() */
 
 	return writeall(fd,(unsigned char*)string,len);
 }
-#endif
 int printva(int fd, char*string, va_list*args)
 {
 	int err;
@@ -1523,7 +1040,7 @@ int nonblocking(int fd)
 {
 	int err;
 	err = fcntl(fd,F_GETFL);
-	if(err==-1)
+	if(err<0)
 		return -1;
 	return fcntl(fd,F_SETFL,err | O_NONBLOCK);
 }
@@ -1531,7 +1048,7 @@ int blocking(int fd)
 {
 	int err;
 	err = fcntl(fd,F_GETFL);
-	if(err==-1)
+	if(err<0)
 		return -1;
 	return fcntl(fd,F_SETFL,err & ~O_NONBLOCK);
 }
@@ -1539,7 +1056,7 @@ int cloexec(int fd)
 {
 	int err;
 	err = fcntl(fd,F_GETFD);
-	if(err==-1)
+	if(err<0)
 		return -1;
 	return fcntl(fd,F_SETFD,err | O_CLOEXEC);
 }
@@ -1547,7 +1064,7 @@ int noncloexec(int fd)
 {
 	int err;
 	err = fcntl(fd,F_GETFD);
-	if(err==-1)
+	if(err<0)
 		return -1;
 	return fcntl(fd,F_SETFD,err & ~O_CLOEXEC);
 }
@@ -1558,12 +1075,12 @@ int getflags(int fd)
 	int err;
 
 	err = fcntl(fd,F_GETFD);
-	if(err==-1)
+	if(err<0)
 		return -1;
 	if(err&FD_CLOEXEC) flags = O_CLOEXEC; else flags = 0;
 
 	err = fcntl(fd,F_GETFL);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	return flags | err;
@@ -1634,7 +1151,7 @@ int area(int tty, int*x,int*y)
 
 	struct winsize w;
 	err = ioctl(tty,TIOCGWINSZ, &w);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	if(x!=NULL)
@@ -1644,15 +1161,6 @@ int area(int tty, int*x,int*y)
 
 	return 0;
 }
-#if 0
-int resize(int tty, int x, int y)
-{
-	struct winsize w;
-	w.ws_col = x;
-	w.ws_row = y;
-	return ioctl(0,TIOCSWINSZ, &w);
-}
-#endif
 
 int charmode(int tty)
 {
@@ -1699,7 +1207,7 @@ int input(int tty, char buf[8])
 
 	waitread(tty,-1);
 	err = read(tty,buf,8);
-	if(err==0||err==-1)
+	if(err==0||err<0)
 		goto fail;
 
 	if(err>1 && buf[0]<0)
@@ -1743,7 +1251,7 @@ int input(int tty, char buf[8])
 			buf[1]=(buf[1]&0x7F)+'A'-1;
 		} 
 		/*
-		FIXME determine if these xterm-specific keycodes clash with utf8 characters.
+		FIXME determine how these xterm-specific keycodes clash with utf8 characters.
 		*/
 	}
 
@@ -1837,17 +1345,6 @@ int character(char buf[8])
 	else if((buf[0] >= ' '||buf[0]==9||buf[0]==13) && buf[0] < 127)
 		/* regular char (including space,tab,enter -- discluding backspace) */
 		return buf[0];
-#if 0
-	/* special xterm parser: */
-	else if((unsigned char)buf[0] == 195 && (unsigned char)buf[1] > 127 && buf[2] == 0)
-		/* FIXME this conflicts with utf8 symbols FIXME */
-		/* it is an alt+ keyboard combination, and we are in xterm's default mode */
-		return ((unsigned char)buf[1])-128; 
-	/* :special xterm parser */
-	else if(buf[0]<0)
-		/* it is a utf8 character, which we must parse and package into the return int */
-		return *((int*)buf);
-#endif
 	else	
 		/* not a char */
 		return 0;
@@ -1932,15 +1429,15 @@ int dial(char*hostname, short port, int flags)
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(sck,F_SETFD,flags&O_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail;
 	}
 	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	err = connect(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_storage));
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	return sck;
@@ -1957,11 +1454,11 @@ int tcp4(short port, int flags)    /* tcp/ip4 */
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
 		err = fcntl(sck,F_SETFD,FD_CLOEXEC);
-		if(err==-1)
+		if(err<0)
 			goto fail;
 	}
 	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	struct sockaddr_in addr;
@@ -1971,11 +1468,11 @@ int tcp4(short port, int flags)    /* tcp/ip4 */
 	addr.sin_port = htons(port);	
 
 	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in));
-	if(err==-1)
+	if(err<0)
 		goto fail; 
 
 	err = listen(sck,1024);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	return sck;
@@ -1996,7 +1493,7 @@ int tcp6(short port, int flags)    /* tcp/ip6 */
 			goto fail;
 	}
 	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	struct sockaddr_in6 addr;
@@ -2006,11 +1503,11 @@ int tcp6(short port, int flags)    /* tcp/ip6 */
 	addr.sin6_port = htons(port);	
 
 	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in6));
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	err = listen(sck,1024);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 
 	return sck;
@@ -2056,7 +1553,7 @@ int give(int fd, int payload)
 
 	int err;
 	err = sendmsg(fd, &head, MSG_WAITALL);
-	if(err==-1)
+	if(err<0)
 		return -1;
 
 	/* 
@@ -2077,7 +1574,7 @@ int take(int fd, int flags)
 	{
 		fd = err;
 		err = setflags(fd,flags);
-		if(err==-1)
+		if(err<0)
 		{
 			close2(fd);
 			return -1;
@@ -2118,7 +1615,7 @@ int take(int fd, int flags)
 	interface->cmsg_len = CMSG_LEN(1*sizeof(int));
 
 	err = recvmsg(fd, &head, MSG_WAITALL);
-	if(err==-1)
+	if(err<0)
 		return -1; 
 
 	if(interface->cmsg_len != CMSG_LEN(1*sizeof(int)))
@@ -2135,7 +1632,7 @@ int take(int fd, int flags)
 	/* return the new fd that we recieved in the payload */
 	fd = *((int*)CMSG_DATA(interface));
 	err = setflags(fd,flags);
-	if(err==-1)
+	if(err<0)
 	{
 		close2(fd);
 		return -1;
