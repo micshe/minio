@@ -307,8 +307,12 @@ static size_t readentry(int fd, char*buf, size_t len)
 	size_t l;
 
 	int tmpfd;
-	tmpfd = dup(fd);
-	if(tmpfd==-1)
+	if(fd==-1)
+		tmpfd=open(".",O_CLOEXEC);
+	else
+		/* FIXME O_CLOEXEC tmpfd */
+		tmpfd = dup(fd);
+	if(tmpfd<0)
 		/* do not change @buf */
 		return 0;
 
@@ -957,7 +961,7 @@ int cdup(int fs, int flags)
 
 	/* redirect correctly handles fs==-1 */
 	/* redirect closes up on success */
-	err = redirect(fs,up,flags);
+	err = redirect(fs,up,flags&O_CLOEXEC);
 	if(err<0)
 		goto fail;
 
@@ -1210,7 +1214,7 @@ int canwrite(int fd)
 	       (data.revents & POLLERR)!=POLLERR && 
 	       (data.revents & POLLHUP)!=POLLHUP;
 }
-int waitread(int fd, int timeout)
+int waitread(int fd, int timelimit)
 {
 	struct pollfd data;
 	data.fd = fd;
@@ -1225,7 +1229,7 @@ int waitread(int fd, int timeout)
 	       (data.revents & POLLERR)!=POLLERR && 
 	       (data.revents & POLLHUP)!=POLLHUP; 
 }
-int waitwrite(int fd,int timeout)
+int waitwrite(int fd,int timelimit)
 {
 	struct pollfd data;
 	data.fd = fd;
@@ -1254,37 +1258,43 @@ int isonline(int fd)
 	return (data.revents & POLLERR)!=POLLERR && 
 	       (data.revents & POLLHUP)!=POLLHUP; 
 }
-int redirect(int src, int dst, int flags) /* consider renaming rd() so it is analogus to cd() */
+int redirect(int fd, int target, int flags) /* consider renaming rd() so it is analogus to cd() */
 {
 	int err;
 
-	if(src==-1 && dst==-1)
+	if(fd==-1 && target==-1)
 		/* equivalent to chdir(".") or fchdir(open(".",O_RDONLY)); */
 		return seek(-1,0);
-	if(src==-1)
+	if(fd==-1)
 	{
-		err = chdirfd(dst);
+		err = chdirfd(target);
 		if(err==0)
-			close2(dst);
+			close2(target);
 		return err;
 	}
-	if(dst==-1)
+	if(target==-1)
 	{
-		dst = open(".",O_RDONLY|O_CLOEXEC);
-		if(dst<0)
-			return dst; 
+		target = open(".",O_RDONLY|O_CLOEXEC);
+		if(target<0)
+			return target; 
 	}
 
-	err = dup2(dst,src);
+	/* FIXME consider using linux dup3() */
+	err = dup2(target,fd);
 	if(err<0)
-		return err;
+		goto fail;
 
+	/* no recourse if these fcntl()s fail */
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
-		fcntl(F_SETFD, FD_CLOEXEC);
-	fcntl(F_SETFL, flags);
+		fcntl(fd,F_SETFD, FD_CLOEXEC);
+	fcntl(fd,F_SETFL, flags);
 
-	close2(dst);
+	close2(target);
 	return 0;
+
+fail:
+	close2(target);
+	return -1;
 }
 
 int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid)

@@ -445,6 +445,7 @@ future work
 - introduce #ifdef'd support for SOCK_CLOEXEC (covers all major OSs bar OSX)
 - introduce #ifdef'd support for OSX's version of SOCK_CLOEXEC, that applies
   to all sockets created by an existing socket.
+- introduce #ifdef'd support for linux's dup3() (check for BSD,OSX equivalents)
 - introduce posix ____at() style filesystem functions (this will require 
   mocking up a connectat() and bindat() pair of functions)
 - introduce a broadcast() function for writing the same string to a batch of
@@ -453,6 +454,13 @@ future work
   for inserting and removing text from a file, without overwriting or leaving 
   blank regions
   (remove() is a C89 function for delete/unlink, this might be confusing)
+- consider replacing read2/readall and write2/writeall with a read and write
+  call that emulate the MSG_NOWAIT|MSG_WAITALL, and (possibly) always attempt
+  to perform MSG_NOSIGNAL like behaviour.
+  - on OSX this can be done with per-thread signal blocking
+  - on linux this will have to be done by a syscall() to avoid linking with
+    the pthread library
+  - on FreeBSD|etc this may require the same approach as linux
 - introduce join,split,fuse,wrap file-descriptor routing operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
 

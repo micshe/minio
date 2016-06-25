@@ -58,10 +58,10 @@ int duplex(int duplexfd[2],int flags);
 int simplex(int simplexfd[2],int flags);
 int canread(int fd);
 int canwrite(int fd); 
-int waitread(int fd,int timeout);
-int waitwrite(int fd,int timeout);
+int waitread(int fd,int timelimit);
+int waitwrite(int fd,int timelimit);
 int isonline(int fd); 
-int redirect(int src, int dst, int flags);
+int redirect(int fd, int target, int flags);
 
 int popen3(char*cmd, int stdin,int stdout,int stderr, pid_t*pid);
 int filter(int pull, char*cmd, int push, pid_t*pid);
@@ -126,3 +126,4 @@ int dial(char*hostname, short port, int flags);
 #endif
 
 #endif
+
