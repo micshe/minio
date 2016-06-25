@@ -7,7 +7,7 @@
 #include<termios.h>    /* for charmode, linemode */
 #include<sys/socket.h>
 #include<sys/un.h>     /* for mkserver */
-#include<netdb.h>       /* getaddrinfo() */
+#include<netdb.h>      /* getaddrinfo() */
 #include<dirent.h>
 #include<poll.h> 
 
@@ -626,50 +626,43 @@ size_t writeall(int fd, unsigned char*buf, size_t len) /* FIXME rename: put() */
 }
 #endif
 
-ssize_t filename(int fd, char*buf, size_t len)
+size_t filename(int fd, char*buf, size_t len)
 {
-	ssize_t err; 
+	int err; 
 	dev_t dev;
 	ino_t ino;	
 	struct stat meta;
 
 	if(len < 2)
-	{
-		errno = ENOMEM;
-		return -1;
-	}
+		return ((errno = ENOMEM),-1);
 
-	errno = 0;
-
+	size_t e;
 	if(fd==-1)
 	{
-		fd = open(".",O_RDONLY|O_CLOEXEC);
-		if(fd==-1)
-			return -1; 
-		err = filename(fd,buf,len); 
+		fd = ((errno=0),open(".",O_RDONLY|O_CLOEXEC));
+		if(fd<0)
+			return fd; 
+		e = filename(fd,buf,len); 
 		close2(fd); 
-		return err;
+		return e;
 	}
 
 	err = fstat(fd,&meta);
-	if(err==-1)
-		return -1;
+	if(err<0)
+		return err;
 	if(!S_ISDIR(meta.st_mode))
-	{
-		errno = ENOTDIR;
-		return -1;
-	}
+		return ((errno=ENOTDIR),-1);
 
 	dev = meta.st_dev;
 	ino = meta.st_ino;
 
 	int up;
 	up = openat(fd,"..",O_RDONLY|O_CLOEXEC);
-	if(up==-1)
-		return -1;
+	if(up<0)
+		return up;
 
 	err = fstat(up,&meta);
-	if(err==-1)
+	if(err<0)
 		goto fail;
 	if(dev == meta.st_dev && ino == meta.st_ino)
 	{
@@ -684,21 +677,21 @@ ssize_t filename(int fd, char*buf, size_t len)
 	while(readentry(up,tmp,8192) != 0)
 	{
 		err = fstatat(up,tmp,&meta,AT_SYMLINK_NOFOLLOW);
-		if(err==-1)
+		if(err<0)
 			goto fail;
 		if(meta.st_dev==dev && meta.st_ino==ino)
 		{
 			close(up);
 			strncpy(buf,tmp,len);
 			buf[len-1]='\0';
-			return strlen(buf);
+			return ((errno=0),strlen(buf));
 		}
 	}
 	errno = ENOENT;
 
 fail:
 	close2(up);
-	return -1;	
+	return -1;
 } 
 
 #if 0
@@ -804,7 +797,7 @@ fail:
 	return -1;
 }
 #else
-int chdirfd(int fd)
+static int chdirfd(int fd)
 {
 	off_t offset;
 	offset = lseek(fd,0,SEEK_CUR);
@@ -817,6 +810,7 @@ int chdirfd(int fd)
 	minio_cwd_offset = offset; 
 	return 0;
 }
+#if 0
 int chdir2(char*path, int flags)
 {
 	int fd;
@@ -884,6 +878,7 @@ fail:
 	close2(fd);
 	return -1;
 }
+#endif
 int cd(int fs, char*path, int flags)
 {
 	int err;
@@ -908,16 +903,76 @@ int cd(int fs, char*path, int flags)
 	if(!S_ISDIR(meta.st_mode))
 		return ((errno=ENOTDIR),-1);
 
-	err = redirect(fs,fd);
+	err = redirect(fs,fd,flags);
 	if(err<0)
 		return err;
 	
 	return ((errno=0),0);
 }
-int cdup(int fs)
+int cdup(int fs, int flags)
 {
+#if 1
+	int err;
+
+	char tmp[8192]; 
+	size_t e;
+	e = filename(fs,tmp,8192);
+	if(e==0)
+		return ((errno=ENOENT),-1);
+
+	int up;
+	if(fs==-1)
+		up = open("..",O_CLOEXEC);
+	else
+		up = openat(fs,"..",O_CLOEXEC);
+	if(up<0)
+		return up;
+
+	struct stat needle;
+	if(fs==-1)
+		err = stat(".",&needle);
+	else
+		err = fstat(fs,&needle);
+	if(err<0)
+		goto fail;
+
+	if(!S_ISDIR(needle.st_mode))
+	{
+		errno=ENOTDIR;
+		goto fail;
+	}	
+
+	struct stat haystack;
+	do
+	{
+		e = gets2(up,tmp,8192);
+		if(e==0)
+			goto fail;
+
+		err = fstatat(up,tmp,&haystack,AT_SYMLINK_NOFOLLOW);
+		if(err<0)
+			goto fail; 
+	} 
+	while (needle.st_dev!=haystack.st_dev && needle.st_ino!=haystack.st_ino);
+
+	/* redirect correctly handles fs==-1 */
+	/* redirect closes up on success */
+	err = redirect(fs,up,flags);
+	if(err<0)
+		goto fail;
+
+	return ((errno=0),0);
+
+fail:
+	err=errno;
+		close(up);
+	errno=err;
+
+	return -1;
+#else
 	errno=ENOTSUP;
 	return -1; 
+#endif
 }
 
 off_t seek(int fd, off_t offset)
@@ -971,6 +1026,7 @@ int rmdir2(char*path)
 #endif
 int delete(char*path)
 {
+#if 0
 	int err; 
 	err = unlink(path);
 	if(err==0)
@@ -1045,6 +1101,9 @@ int delete(char*path)
 fail:
 	close2(fd);
 	return -1;
+#else
+	return ((errno=ENOSYS),-1);
+#endif
 }
 
 int simplex(int simplexfd[2],int flags) 
@@ -1212,13 +1271,13 @@ int redirect(int src, int dst, int flags) /* consider renaming rd() so it is ana
 	if(dst==-1)
 	{
 		dst = open(".",O_RDONLY|O_CLOEXEC);
-		if(dst==-1)
-			return -1; 
+		if(dst<0)
+			return dst; 
 	}
 
 	err = dup2(dst,src);
-	if(err==-1)
-		return -1;
+	if(err<0)
+		return err;
 
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 		fcntl(F_SETFD, FD_CLOEXEC);
