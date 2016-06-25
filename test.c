@@ -1126,18 +1126,19 @@ void test_gets2()
 	printf("pass: open 1-level directory\n");
 
 	char buf[8192];
-	
+	size_t e;
+
 	printf("test: list 1-level directory\n");
 	for(;;)
 	{
-		err = gets2(fd,buf,8192);
-		printf("debug: gets2 returned %d\n",err);
-		if(err==0 && errno!=0) /* => error */
+		e = gets2(fd,buf,8192);
+		printf("debug: gets2 returned %lu\n",(unsigned long)e);
+		if(e==0 && errno!=0) /* => error */
 		{
 			perror("fail: gets2");
 			exit(1);
 		}
-		if(err==0 && errno==0) /* => EOF */
+		if(e==0 && errno==0) /* => EOF */
 			break;
 		printf("debug: file: %s\n",buf);
 	}

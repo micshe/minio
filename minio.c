@@ -203,14 +203,18 @@ static size_t readentry(int fd, char*buf, size_t len)
 	off_t i;
 	for(i=0;i<=offset;++i)
 	{
+retry:
 		ent=((errno=0),readdir(dp));
 		if(ent==NULL)
 			goto fail;
 
 		if((ent->d_name[0]=='.' && ent->d_name[1]=='\0')||
 		   (ent->d_name[0]=='.' && ent->d_name[1]=='.' && ent->d_name[2]=='\0'))
+{
 			/* FIXME ensusre this behaves the same as linux/glibc version */
-			i = (i>0)?i-1:0; 
+			i = (i>0)?i-1:0;
+			goto retry;
+}
 	}
 	/* leaves backing fd open */
 	fdclosedir(dp);
@@ -349,10 +353,14 @@ size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 	}
 
 	err = readentry(fd,buf,len);
-	if(err>0)
-		return err;
+	if(errno==EINVAL)
+		/* 
+		FreeBSD libc returns errno=EINVAL if fd is
+		not a directory
+		*/
+		return readuntil(fd,(unsigned char*)buf,len);
 
-	return readuntil(fd,(unsigned char*)buf,len);
+	return err;
 }
 
 size_t readall(int fd, unsigned char*buf, size_t len) /* FIXME rename: get() */
@@ -1431,10 +1439,7 @@ static int dns(char*hostname, struct sockaddr_storage*addr)
 	int err;
 	err = getaddrinfo(hostname,NULL,&hints,&servinfo);
 	if(err<0)
-	{
-		printf("FAIL: %s\n",gai_strerror(err));
 		return err;
-	}
 
 	if(addr!=NULL)
 	{
