@@ -1,15 +1,15 @@
 #include<sys/types.h>
 #include<sys/stat.h>
 #include<sys/wait.h>   /* for filter, popen3 */
-#include<fcntl.h>      /* for fd flags */
-
 #include<sys/ioctl.h>  /* for size */
-#include<termios.h>    /* for charmode, linemode */
 #include<sys/socket.h>
 #include<sys/un.h>     /* for mkserver */
+#include<netinet/in.h> /* for htons() etc (FreeBSD) */
 #include<netdb.h>      /* getaddrinfo() */
 #include<dirent.h>
 #include<poll.h> 
+#include<fcntl.h>      /* for fd flags */
+#include<termios.h>    /* for charmode, linemode */
 
 #include<unistd.h>
 
