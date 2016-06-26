@@ -79,10 +79,7 @@ int mkpath(char*path, int mode)
 	size_t l;
 	l = strlen(path);
 	if(l>8192)
-	{
-		errno = ENOMEM;
-		return -1;
-	} 
+		return ((errno=ENOMEM),-1);
 	strcpy(buf,path);
 	path = buf;
 
@@ -98,16 +95,14 @@ int mkpath(char*path, int mode)
 			path[i]='\0';
 				err = mkdir(path,mode);
 				if(err<0 && errno!=EACCES && errno!=EEXIST)
-					/* FIXME do we want to keep this return-signature? */
-					return -(count+1);
+					return -1;
 				++count; 
 			path[i]='/';
 		}
 	/* make the final entry */
 	err = mkdir(path,mode);
 	if(err<0)
-		/* FIXME do we want to keep this return-signature? */
-		return -(count+1);
+		return -1;
 
 	return ((errno=0),0);
 }
@@ -189,6 +184,56 @@ static size_t readuntil(int fd,unsigned char*buf,size_t len)
 }
 static size_t readentry(int fd, char*buf, size_t len)
 {
+#ifdef __FreeBSD__
+	int err;
+
+	off_t offset;
+	offset = lseek(fd,0,SEEK_CUR);
+	if(offset<0)
+		return 0;
+
+	DIR*dp;
+	dp = fdopendir(fd);
+	if(dp==NULL)
+		return 0;
+	rewinddir(dp);
+
+	struct dirent*ent;
+	size_t l=0;
+	off_t i;
+	for(i=0;i<=offset;++i)
+	{
+		ent=((errno=0),readdir(dp));
+		if(ent==NULL)
+			goto fail;
+
+		if((ent->d_name[0]=='.' && ent->d_name[1]=='\0')||
+		   (ent->d_name[0]=='.' && ent->d_name[1]=='.' && ent->d_name[2]=='\0'))
+			/* FIXME ensusre this behaves the same as linux/glibc version */
+			i = (i>0)?i-1:0; 
+	}
+	/* leaves backing fd open */
+	fdclosedir(dp);
+
+	strncpy(buf,ent->d_name,len);
+	l=strlen(ent->d_name);
+	if(l > len-1)
+		/* manually null terminate because strncpy does not */
+		buf[len-1]='\0';
+
+	/* no recourse if this fails */
+	lseek(fd,i,SEEK_SET);
+
+	return ((errno=0),l);
+
+fail:
+	err=errno;
+		/* leaves backing fd open */
+		fdclosedir(dp);
+	errno=err;
+
+	return 0;
+#else
 	struct dirent*ent;
 
 	DIR*dp;
@@ -199,8 +244,7 @@ static size_t readentry(int fd, char*buf, size_t len)
 	if(fd==-1)
 		tmpfd=open(".",O_CLOEXEC);
 	else
-		/* FIXME O_CLOEXEC tmpfd */
-		tmpfd = dup(fd);
+		tmpfd = openat(fd,".",O_CLOEXEC);
 	if(tmpfd<0)
 		/* do not change @buf */
 		return 0;
@@ -235,6 +279,7 @@ retry:
 	closedir(dp);
 
 	return ((errno=0),l); 
+#endif
 } 
 size_t read2(int fd, unsigned char*buf, size_t len) /* FIXME rename: pull() */
 {

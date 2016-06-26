@@ -6,19 +6,31 @@ or are but require some amount of configuration via flags and
 reading-the-manual-to-make-sure-you've-remembered-it-right.
 many of these operations (like popen3, mkpath), are widely provided 
 and behave as expected.  some (simplex, duplex, redirect) are just 
-wrappers around common posix functions (pipe, socketpair, dup2) that 
-have an argument signature that i prefer.
+wrappers around common posix functions (pipe, socketpair, dup2) with
+slightly different argument signatures, and more self-explanatory
+names.
 
-in a few situations, similar behaviour has been unified into a single
-function call.  open2()ing a local-stream-socket file connects to
-it as a client.   gets()ing or read2()ing from a directory returns
-the next filename from the directory, like readdir.  accept()ing a 
-connection to a socket server is treated as the same as take()ing
-a file descriptor that was give()en over a local socket.
+in a few situations, sets of posix functions similar behaviour have 
+been unified into a single function call.  open2()ing a 
+local-stream-socket file connects to it as a client.   gets()ing 
+from a directory returns the next filename from the directory, like 
+readdir.  accept()ing a connection to a socket server is treated as 
+the same as take()ing a file descriptor that was give()en over a local 
+socket.
 
 minio contains some super-posix functionality for tty io, like the
 ioctl to get the screensize of a tty, and functions to the work
 with common tty escape codes for both input and output.
+
+
+building
+******** 
+ [todo]
+
+
+installing
+**********
+ [todo]
 
 
 threadsafety
@@ -32,6 +44,17 @@ are not thread-exec safe or thread-fork-exec safe.  this is a pity,
 since minio provides three fork-exec functions, filter(), launch(), 
 and popen3(), but it how it is for now.
 
+minio provides a special mechanism for changing and accessing the 
+process's current-working-directory, via the "file-descriptor" -1.
+
+these functions are not protected by locks, and should not be used
+with the fd=-1 by more than one thread at a time.  doing so will 
+result in corruption and undefined behaviour.
+
+fd=-1 invocations of these functions should not be mixed with calls 
+to the posix chdir() or posix fchdir() functions.  doing so will 
+result in corruption and undefined behaviour.
+
 
 modules
 *******
@@ -42,7 +65,13 @@ operate on posix file-descriptors and/or pre-allocated buffers,
 and are designed to be useful when used with functions from other 
 modules as much as functions from their own.  for example, all 
 modules will require at least one function from the file-descriptor 
-module to be of any practical use.
+module to be of any practical use.  
+
+all minio functions that operate on posix file descriptors can be
+freely mixed with calls to standard posix file descriptor functions, 
+or os-specific file descriptor functions.  since minio provides no
+version of posix poll(), linux epoll(), or BSD kqueue(), relying on
+posix or os-specific funtions is often nessesary.
 
 
 filesystem module
@@ -85,6 +114,8 @@ character()
 
 documentation
 *************
+unlike posix, all minio functions set errno=0 on success.
+
 
   int open2(char*path, int mode, int perm);
 
@@ -125,33 +156,32 @@ bytes written to @buffer on sucess, 0 on failure.
 this is a generic delete function, that deletes files, empty
 directories, and populated directories, in one function call.
 the directory must *not* contain any hardlink cycles.  returns
-0 on sucess, -1 on failure.  walks through the directory tree
-using chdir2() and chdirup(), so not safe to use in a 
-multithreading environment.
+0 on sucess, -1 on failure.
 
 
   int cd(int fd, char*path, int flags);
 
-changes the file descriptor directory.  flags can be any of 0,
-O_CLOEXEC, or O_NOFOLLOW, which will prevent cd() from entering
-a symlinked directory.  
+changes the directory of a file descriptor.  flags can be any 
+of 0, O_CLOEXEC, or O_NOFOLLOW (which will prevent cd() from 
+entering a soft-linked directory).
 
 use -1 as the fd to cd the current-working-directory.
 this function must be used to change the cwd in order for 
-seek,tell,gets,cdup to function correctly when accessing
-the current-working-directory.  
+seek,tell,gets2,cdup to function correctly when accessing
+the current-working-directory.  do not use posix chdir()
+or posix fchdir().
 
 returns 0 on success, -1 on failure.
 
 
-  int chdirup(int fd, int flags);
+  int cdup(int fd, int flags);
 
 cd's to the parent of the file descriptor directory, and
 repositions the fd's read-head to be at the entry after 
 the directory that has just been exited.  flags can be
 either 0 or O_CLOEXEC.
 
-use -1 as the fd to cd the current-working-directory.  
+use -1 as the fd to cdup the current-working-directory.  
 returns 0 on success, -1 on failure.
 
 
@@ -308,24 +338,38 @@ pass -1 as the fd.
 returns the byte offset of the read-head on success, -1 on error.
 
 
-  simplex(int fd[2], int flags);
+  int simplex(int fd[2], int flags);
 
-[todo]
+creates a simplex (one-way) pipe.  the file descriptor to the
+read-end of the pipe is written to @fd[0] (r comes before w in the
+alphabet), the file descriptor to the write-end of the pipe is
+written to @fd[1] (w comes after r in the alphabet).  flags can be
+0 or O_CLOEXEC or O_NONBLOCK.  returns 0 on success, -1 on failure.
+simplex() creates a posix pipe, and posix fstat() will report @fd[0] 
+and @fd[1] as S_FIFO.
+
+file descriptors cannot be give()en or take()en over simplex pipes.
 
 
-  duplex(int fd[2], int flags);
+  int duplex(int fd[2], int flags);
 
-[todo]
+creates a duplex (two-way) pipe.  the file descriptors to each end
+of the pipe are written to @fd[0] and @fd[1].  flags can be
+0 or O_CLOEXEC or O_NONBLOCK.  returns 0 on success, -1 on failure.
+duplex() creates a pair of posix local-sockets.  posix fstat() will 
+report @fd[0] and @fd[1] as S_SOCK.
+
+file descriptors can be give()en or take()en over duplex pipes.
 
 
-  give(int fd, int payload);
+  int give(int fd, int payload);
 
 sends a file descriptor @payload over a local socket @fd.
 on success, the @payload fd will no longer exist in the
 calling process.  returns 0 on sucess, -1 on failure.
 
 
-  take(int fd, int flags);
+  int take(int fd, int flags);
 
 receives a file descriptor sent over a local socket, or
 accepts a file descriptor connection to a server socket.
@@ -334,15 +378,15 @@ are set to the value of the @flags argument.  returns the
 new file descriptor on success, -1 on failure.
 
 
-  redirect(int fd, int target); 
-  close2(int fd);
-  blocking(int fd);
-  nonblocking(int fd);
-  cloexec(int fd);
-  noncloexec(int fd);
-  getflags(int fd);
-  setflags(int fd, int flags);
-  crash(int fd, char*message, ...);
+  int redirect(int fd, int target); 
+  int close2(int fd);
+  int blocking(int fd);
+  int nonblocking(int fd);
+  int cloexec(int fd);
+  int noncloexec(int fd);
+  int getflags(int fd);
+  int setflags(int fd, int flags);
+  int crash(int fd, char*message, ...);
 
 
   charmode(int fd);
@@ -351,6 +395,9 @@ sets the terminal opened on @fd into character-by-character
 mode (sometimes called non-cannonical mode or raw mode).
 returns 0 on success, -1 on failure.
 
+use this function to turn on key-by-key input parsing for
+an interactive terminal application.
+
 
   linemode(int fd);
  
@@ -358,41 +405,44 @@ sets the terminal opened on @fd into line-by-line mode
 (sometimes called cannonical mode or cooked mode).
 returns 0 on success, -1 on failure.
 
+use this function to turn off key-by-key input parsing
+before exit()ing an interactive terminal application.
 
-  input();
-  size();
-  quit();
 
-  cls();
-  locate();
-  normal();
-  
-  palette();
-  websafe();
-  greyscale();
-  color();
-  
-  bold();
-  italics();
-  underline();
-  
-  ischaracter();
-  isctrl();
-  isalt();
-  isctrlalt();
-  isarrow();
-  
-  isup();
-  isdown();
-  isleft();
-  isright();
-  
-  isescape();
-  isbackspace();
-  isenter();
-  istab();
+  input(int fd, char buf[8]);
+  size(int fd, int*x,int*y);
+  quit(int code);
 
-  character();
+  cls(int fd);
+  locate(int fd, int x, int y);
+  normal(int fd);
+  
+  palette(int fd, int fg, int bg);
+  websafe(int fd, int fg, int bg);
+  greyscale(int fd, int fg, int bg);
+  color(int fd, int fg, int bg);
+  
+  bold(int fd);
+  italics(int fd);
+  underline(int fd);
+  
+  ischaracter(char buf[8]);
+  isctrl(char buf[8]);
+  isalt(char buf[8]);
+  isctrlalt(char buf[8]);
+  isarrow(char buf[8]);
+  
+  isup(char buf[8]);
+  isdown(char buf[8]);
+  isleft(char buf[8]);
+  isright(char buf[8]);
+  
+  isescape(char buf[8]);
+  isbackspace(char buf[8]);
+  isenter(char buf[8]);
+  istab(char buf[8]);
+
+  character(char buf[8]);
 
 
 patterns
@@ -483,10 +533,32 @@ todo: make a minimal ls clone, to demonstrait directory reading
       - a breadth first recursive function
       - a depth first stack-counter function
 
+
+testing
+*******
+linux 3.16.0 gcc 4.8.4   eglibc 2.9........pass
+freebsd 10.2 clang 3.4.1 libc x.x.x........fail
+
+
 issues
 ******
-- gets2 and read2 do not advance to the next directory entry after reading
-  in FreeBSD.
+- gets2 does not advance to the next directory entry after reading in 
+  FreeBSD, due to FreeBSD not recognising directory seek offsets once
+  closedir() has been called.
+  - workarounds:
+    - do it slowly 
+      - check the offset of the fd, 0 = 0th entry, 1 = 1st entry, etc
+      - manually scan through the N entries until we reach the requested
+        entry number.
+      - this requires FreeBSD to keep the same directory entry ordering
+        between calls to closedir() and opendir().
+    - do it thouroughly
+      - maintain a (lock protected) cache of DIR* and dev:ino values.
+        every attempt to gets2() from a directory fd looksup this cache,
+        and opendir()s it if nessesary.  if the dev:ino does not match,
+        it is replaced.
+      - this requires all fd closing to be done with minio's close2() for
+        absolute safety.
 - FreeBSD-xterm erroniously parses alt+char,alt+shift+char in its default
   configuration.  parses correctly when set to 'meta-sends-escape'.  what
   is different about FreeBSDs default xterm configuration and Ubuntu's?
@@ -494,6 +566,7 @@ issues
   - FreeBSD uxterm correctly parses alt+char,alt+shift+char,ctrl+alt+char
   - FreeBSD console ignores the alt in alt+char, alt+shift+char,ctrl+alt+char
     keypresses but otherwise parses correctly,
+
 
 future work
 ***********
@@ -566,4 +639,15 @@ future work
   user specified width, where 0=>default=>80.  tabs have to be translated to 
   spaces.  rightalign should not split words unless the word is longer than a 
   line.
+- consider introducing stdio-based mutex locks, and using them to protect
+  operations on the -1 file descriptor, as well as publically exposing them.
+- consider introducing pthread|syscall wrapping functions for getting an opaque
+  object that is unique for each thread, which could be useful for functions
+  that need to know if they're being called from a different thread then the
+  last time.
+- consider introducing a corecount() function, and a function to fork N 
+  subprocesses, so one-subprocess-per-core can be created.
+- consider introducing an isdir(int fd) function, that tests the type of open 
+  fd.  not nessesary to introduce functions for testing the various forms of
+  non-directory fds.
 

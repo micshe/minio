@@ -1128,7 +1128,7 @@ void test_gets2()
 	char buf[8192];
 	
 	printf("test: list 1-level directory\n");
-	for(err=0;err>=0;)
+	for(;;)
 	{
 		err = gets2(fd,buf,8192);
 		printf("debug: gets2 returned %d\n",err);
