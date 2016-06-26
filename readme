@@ -542,6 +542,11 @@ freebsd 10.2 clang 3.4.1 libc x.x.x........fail
 
 issues
 ******
+- FreeBSD connect() failing with ECONNREFUSED.
+- FreeBSD connect() does not accept sizeof(struct sockaddr_storage).
+- FreeBSD read() does not fail with EISDIR if used on a directory fd.
+  this requires gets2 to attempt to readentry(), and fallback to read()
+  if readentry() fails.  probably better to just use an isdir() check.
 - gets2 does not advance to the next directory entry after reading in 
   FreeBSD, due to FreeBSD not recognising directory seek offsets once
   closedir() has been called.
@@ -552,6 +557,8 @@ issues
         entry number.
       - this requires FreeBSD to keep the same directory entry ordering
         between calls to closedir() and opendir().
+      - this requires FreeBSD to reset the seek position after every
+        unlink operation in delete
     - do it thouroughly
       - maintain a (lock protected) cache of DIR* and dev:ino values.
         every attempt to gets2() from a directory fd looksup this cache,
