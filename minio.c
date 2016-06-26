@@ -1,14 +1,14 @@
 #include<sys/types.h>
-#include<sys/stat.h>
+#include<sys/stat.h>   /* for filename, cd, cdup */
 #include<sys/wait.h>   /* for filter, popen3 */
-#include<sys/ioctl.h>  /* for size */
-#include<sys/socket.h>
+#include<sys/ioctl.h>  /* for area */
+#include<sys/socket.h> /* for mkserver, open, tcp, dial */
 #include<sys/un.h>     /* for mkserver */
-#include<netinet/in.h> /* for htons() etc (FreeBSD) */
+#include<netinet/in.h> /* htons() etc (FreeBSD) */ /* deprecated */
 #include<netdb.h>      /* getaddrinfo() */
-#include<dirent.h>
-#include<poll.h> 
-#include<fcntl.h>      /* for fd flags */
+#include<dirent.h>     /* for gets2 */
+#include<poll.h>       /* for canread, waitread, canwrite, waitwrite */
+#include<fcntl.h>      /* O_CLOEXEC|O_NONBLOCK|etc */
 #include<termios.h>    /* for charmode, linemode */
 
 #include<unistd.h>
@@ -686,8 +686,6 @@ int delete(char*path)
 		e = gets2(head,tmp,8192);
 		if(e>0)
 		{
-			printf("read file: %s\n",tmp);
-
 #if 0
 			/* if it is a file */
 			err = unlinkat(head,tmp,0);
@@ -1151,7 +1149,7 @@ int cloexec(int fd)
 	err = fcntl(fd,F_GETFD);
 	if(err<0)
 		return -1;
-	return fcntl(fd,F_SETFD,err | O_CLOEXEC);
+	return fcntl(fd,F_SETFD,err | FD_CLOEXEC);
 }
 int noncloexec(int fd)
 {
@@ -1159,7 +1157,7 @@ int noncloexec(int fd)
 	err = fcntl(fd,F_GETFD);
 	if(err<0)
 		return -1;
-	return fcntl(fd,F_SETFD,err & ~O_CLOEXEC);
+	return fcntl(fd,F_SETFD,err & ~FD_CLOEXEC);
 }
 
 int getflags(int fd)
@@ -1469,31 +1467,82 @@ void crash(char*string,...)
 	_exit(EXIT_FAILURE);
 }
 
+#if 0
 static int dns(char*hostname, struct sockaddr_storage*addr)
 {
-	struct addrinfo hints;
-	struct addrinfo*servinfo;
+	struct addrinfo hint;
+	struct addrinfo*info;
 
-	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC; 
-	hints.ai_socktype = SOCK_STREAM;
+	memset(&hint, 0, sizeof(struct addrinfo));
+	hint.ai_family = AF_UNSPEC; 
+	hint.ai_socktype = SOCK_STREAM;
 
 	int err;
-	err = getaddrinfo(hostname,NULL,&hints,&servinfo);
-	if(err<0)
-		return err;
+	err = getaddrinfo(hostname,NULL,&hint,&info);
+	if(err!=0)
+		/* FIXME how to pass dns specific errors? */
+		return -1;
 
 	if(addr!=NULL)
 	{
 		memset(addr,0,sizeof(struct sockaddr_storage));
-		memcpy(addr,servinfo->ai_addr,servinfo->ai_addrlen);
+		memcpy(addr,info->ai_addr,info->ai_addrlen);
 	}
  
-	freeaddrinfo(servinfo);
+	freeaddrinfo(info);
 	return ((errno=0),0);
-} 
+}
+#endif
+static int socket2(int family, int type, int protocol, int flags)
+{
+	int err;
+
+#ifdef SOCK_CLOEXEC
+	if(flags&O_CLOEXEC)
+		type|=SOCK_CLOEXEC;
+#endif
+#ifdef SOCK_NONBLOCK
+	if(flags&O_NONBLOCK)
+		type|=SOCK_NONBLOCK;
+#endif
+
+	int sck;
+	sck = socket(family,type,protocol);
+	if(sck<0)
+		goto fail;
+
+#ifndef SOCK_CLOEXEC
+	if(flags&O_CLOEXEC)
+	{
+		/* we don't have to worry about overwriting existing flags */
+		err = fcntl(F_SETFD,sck,FD_CLOEXEC);
+		if(err<0)
+			goto fail;
+	}
+#endif
+#ifndef SOCK_NONBLOCK
+	if(flags&O_NONBLOCK)
+	{
+		/* we don't have to worry about overwriting existing flags */
+		err = fcntl(F_SETFL,sck,O_NONBLOCK);
+		if(err<0)
+			goto fail;
+	}	
+#endif
+
+	return ((errno=0),sck);
+
+fail:
+	err = errno;
+		if(sck>=0)
+			close(sck);
+	errno = err;
+
+	return -1;
+}
 int dial(char*hostname, short port, int flags)
 {
+#if 0
 	struct sockaddr_storage addr; 
 	struct sockaddr_in*ipv4;
 	struct sockaddr_in6*ipv6;
@@ -1506,15 +1555,15 @@ int dial(char*hostname, short port, int flags)
 		/* FIXME how to pass dns specific errors? */
 		return -1;
 
-	int domain;
-	domain = addr.ss_family;
-	if(domain==AF_INET6)
+	if(addr.ss_family==AF_INET6)
 		ipv6->sin6_port = htons(port);
 	else
 		ipv4->sin_port = htons(port);
 
-	int sck; 
-	sck = socket(domain,SOCK_STREAM,0); 
+	int sck;
+	sck = socket(addr.ss_family,SOCK_STREAM,0);
+	if(sck<0)
+		return -1;
 
 	if((flags&O_CLOEXEC)==O_CLOEXEC)
 	{
@@ -1526,18 +1575,7 @@ int dial(char*hostname, short port, int flags)
 	if(err<0)
 		goto fail;
 
-#ifdef __FreeBSD__
-	/*
-	FreeBSD libc connect does not seem to support
-	sizeof(struct sockaddr_storage)
-	*/
-	err = connect(sck, (struct sockaddr*)&addr, 
-	              (domain==AF_INET)?
-	              sizeof(struct sockaddr_in):
-	              sizeof(struct sockaddr_in6));
-#else 
 	err = connect(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_storage));
-#endif
 	if(err<0)
 		goto fail;
 
@@ -1545,7 +1583,121 @@ int dial(char*hostname, short port, int flags)
 fail:
 	close2(sck);
 	return -1; 
+#else
+	int err;
+
+	struct addrinfo*info;
+	struct addrinfo hint;
+
+	memset(&hint,0,sizeof(struct addrinfo));
+	hint.ai_family = AF_UNSPEC;     /* ipv6|ipv4 */
+	hint.ai_socktype = SOCK_STREAM; /* insist on tcp-- Linux */
+	hint.ai_protocol = IPPROTO_TCP; /* insist on tcp-- OSX */
+	hint.ai_flags = 0;              /* only connect to localhost iff hostname==NULL */
+
+	char service[32];
+	snprintf(service,31,"%d",port); /* getaddrinfo only allows specifying the destination port via this mechanism */
+	err = getaddrinfo(hostname,service,&hint,&info);
+	if(err<0)
+		/* FIXME how to return dns specific errors? */
+		return -1;
+
+	int cln;
+	struct addrinfo*next;
+	for(next=info;next!=NULL;next=next->ai_next)
+	{
+		cln=socket2(next->ai_family,next->ai_socktype,next->ai_protocol,flags);
+		if(cln<0)
+			goto fail;
+
+		err=connect(cln,next->ai_addr,next->ai_addrlen);
+		if(err<0)
+			close(cln);
+		else
+			goto pass;
+	}
+	/* fallthrough */
+fail:
+	err=errno;
+		freeaddrinfo(info);
+		if(cln>=0)
+			close(cln);
+	errno=err;
+	return -1;
+
+pass:
+	freeaddrinfo(info);
+	return ((errno=0),cln);
+#endif
 } 
+int tcp(char*hostname, short port, int flags)
+{
+	/**
+	create a tcp server, that listens on @hostname:@port.
+
+	to create a localhost-only tcp server,
+	 srv=tcp("localhost",port,0);
+
+	to create a publicaly available tcp server,
+	 srv=tcp(NULL,port,0);
+
+	to create a tcp server on only a specific ip address,
+	 srv=tcp("xxx.xxx.xxx.xxx",port,0);
+	or
+	 srv=tcp("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx",port,0);
+
+	returns server-fd on success, -1 on failure.
+	**/
+
+	/* FIXME this should loop through all getaddrinfo results like dial() */
+
+	int err;
+	struct addrinfo*info;
+	struct addrinfo hint;
+
+	memset(&hint,0,sizeof(struct addrinfo));
+	hint.ai_family = AF_UNSPEC;     /* both ipv4 and ipv6 */
+	hint.ai_socktype = SOCK_STREAM; /* insist on tcp -- Linux gives this hint precidence over ai_protocol */
+	hint.ai_protocol = IPPROTO_TCP; /* insist on tcp --   OSX gives this hint precidence over ai_socktype */	
+	/* 
+	iff hostname==NULL then listen on ALL addresses the machine has 
+	else listen only on hostname
+	*/
+	hint.ai_flags = AI_PASSIVE;
+
+	char service[32];
+	snprintf(service,31,"%d",port);
+	err = getaddrinfo(hostname,service,&hint,&info);
+	if(err!=0)
+		/* FIXME how to return dns specific errors? */
+		return -1;
+
+	int srv;
+	srv = socket2(info->ai_family, info->ai_socktype, info->ai_protocol, flags);
+	if(srv<0)
+		goto fail;
+
+	err = bind(srv,info->ai_addr, info->ai_addrlen);
+	if(err<0)
+		goto fail;
+
+	err = listen(srv,4096);
+	if(err<0)
+		goto fail;
+
+	freeaddrinfo(info);
+
+	return ((errno=0),srv);
+
+fail:
+	err=errno;
+		freeaddrinfo(info);
+		if(srv>=0)
+			close(srv);
+	errno=err;
+	return -1;
+}
+#if 0
 int tcp4(short port, int flags)    /* tcp/ip4 */
 {
 	int sck;
@@ -1566,7 +1718,7 @@ int tcp4(short port, int flags)    /* tcp/ip4 */
 	memset(&addr,0,sizeof(struct sockaddr_in));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;	
-	addr.sin_port = htons(port);	
+	addr.sin_port = htons(port);
 
 	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in));
 	if(err<0)
@@ -1601,7 +1753,7 @@ int tcp6(short port, int flags)    /* tcp/ip6 */
 	memset(&addr,0,sizeof(struct sockaddr_in6));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;	
-	addr.sin6_port = htons(port);	
+	addr.sin6_port = htons(port);
 
 	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in6));
 	if(err<0)
@@ -1616,6 +1768,7 @@ fail:
 	close2(sck);
 	return -1;
 }
+#endif
 
 int give(int fd, int payload)
 {

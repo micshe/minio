@@ -100,6 +100,7 @@ void crash(char*string,...);
 
 int tcp4(short port, int flags);
 int tcp6(short port, int flags);
+int tcp(char*hostname, short port, int flags);
 int dial(char*hostname, short port, int flags);
 
 #ifdef __cplusplus
