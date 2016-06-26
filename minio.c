@@ -238,17 +238,30 @@ fail:
 
 	return 0;
 #else
+	int err;
+
 	struct dirent*ent;
 
-	DIR*dp;
+	DIR*dp=NULL;
 	off_t offset;
 	size_t l;
 
-	int tmpfd;
+	int tmpfd=-1;
 	if(fd==-1)
 		tmpfd=open(".",O_CLOEXEC);
 	else
-		tmpfd = openat(fd,".",O_CLOEXEC);
+	{
+		/* manual dup(fd,O_CLOEXEC) */
+		tmpfd=openat(fd,".",O_CLOEXEC);
+		if(tmpfd<0)
+			return 0;
+		offset = lseek(fd,0,SEEK_CUR);
+		if(offset<0)
+			goto fail;
+		offset = lseek(tmpfd,offset,SEEK_SET);
+		if(offset<0)
+			goto fail;
+	}
 	if(tmpfd<0)
 		/* do not change @buf */
 		return 0;
@@ -283,6 +296,16 @@ retry:
 	closedir(dp);
 
 	return ((errno=0),l); 
+
+fail:
+	err=errno;
+		if(dp!=NULL)
+			closedir(dp);
+		if(tmpfd!=-1)
+			close(tmpfd);
+	errno=err;
+
+	return 0;
 #endif
 } 
 size_t read2(int fd, unsigned char*buf, size_t len) /* FIXME rename: pull() */
@@ -353,7 +376,7 @@ size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 	}
 
 	err = readentry(fd,buf,len);
-	if(errno==EINVAL)
+	if(errno==ENOTDIR || errno==EINVAL)
 		/* 
 		FreeBSD libc returns errno=EINVAL if fd is
 		not a directory
