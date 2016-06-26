@@ -348,13 +348,11 @@ size_t gets2(int fd, char*buf, size_t len) /* FIXME rename: getln() */
 		return err;
 	}
 
-	err = readuntil(fd,(unsigned char*)buf,len);
+	err = readentry(fd,buf,len);
 	if(err>0)
 		return err;
-	if(errno!=EISDIR)
-		return 0;
 
-	return readentry(fd,buf,len);
+	return readuntil(fd,(unsigned char*)buf,len);
 }
 
 size_t readall(int fd, unsigned char*buf, size_t len) /* FIXME rename: get() */
