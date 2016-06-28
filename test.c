@@ -407,9 +407,9 @@ void test_tcp()
 			crash("fail: server: could not create tcp server: %s\n",strerror(errno));
 		printf("pass: server: created tcp server\n");
 
+#if 0
 		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
 		size_t len=0;
-#if 0
 		cln = accept(srv,(struct sockaddr*)&tmp,&len);
 #else
 		cln = take(srv,0);
