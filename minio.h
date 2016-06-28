@@ -24,9 +24,6 @@ size_t writeall(int fd, unsigned char*buf, size_t len);
 
 size_t filename(int fd, char*buf, size_t len);
 
-int take(int fd, int flags);
-int give(int fd, int payload);
-
 int cd(int fd, char*path, int flags);
 int cdup(int fd, int flags);
 
@@ -73,7 +70,7 @@ int italics(int tty);
 int underline(int tty);
 int doubleunderline(int tty);
 
-int size(int tty, int*x,int*y);
+int area(int tty, int*x,int*y);
 
 int charmode(int fd);
 int linemode(int fd);
@@ -98,11 +95,11 @@ int character(char buf[8]);
 void quit(int code);
 void crash(char*string,...);
 
-int tcp4(short port, int flags);
-int tcp6(short port, int flags);
 int tcp(char*hostname, short port, int flags);
 int dial(char*hostname, short port, int flags);
 
+int take(int fd, int flags);
+int give(int fd, int payload); 
 #ifdef __cplusplus
 }
 #endif

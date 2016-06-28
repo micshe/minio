@@ -82,7 +82,7 @@ cd(), cdup()
 
 networking module
 -----------------
-tcp4(), tcp6(), dial()
+tcp(), dial()
 
 
 subprocess module
@@ -185,20 +185,16 @@ use -1 as the fd to cdup the current-working-directory.
 returns 0 on success, -1 on failure.
 
 
-  int tcp4(short port, int flags);
+  int tcp(char*hostname, short port, int flags);
 
-creates a tcp/ipv4 server listening on @port.  returns fd
-of listening server.  client connections can be taken either
-by posix's accept(2), or by minio's take().  return -1 on
-failure.  flags can be used to set O_NONBLOCK and O_CLOEXEC.
+creates a generic ipv4|ipv6 tcp server listening on 
+@hostname:@port.  returns fd of listening server.  client 
+connections can be taken either by posix's accept(2), or 
+by minio's take().  returns -1 on failure.  flags can be 
+used to set O_NONBLOCK and O_CLOEXEC.
 
-
-  int tcp6(short port, int flags);
-
-creates a tcp/ipv6 server listening on @port.  returns fd
-of listening server.  client connections can be taken either
-by posix's accept(2), or by minio's take().  return -1 on
-failure.  flags can be used to set O_NONBLOCK and O_CLOEXEC.
+if @hostname is NULL, listens on all hostnames available
+to the machine, including localhost.
 
 
   int dial(char*hostname, int port, int flags);
@@ -206,6 +202,8 @@ failure.  flags can be used to set O_NONBLOCK and O_CLOEXEC.
 connects to a tcp ipv4 or ipv6 server on @hostname:@port.
 flags can be used to set O_NONBLOCK and O_CLOEXEC.  returns
 fd of tcp connection to server on success, -1 on failure. 
+
+if @hostname is NULL, dials localhost:@port.
 
 
   int popen3(char*command, int stdin,int stdout,int stderr, pid_t*pid);
@@ -410,7 +408,7 @@ before exit()ing an interactive terminal application.
 
 
   input(int fd, char buf[8]);
-  size(int fd, int*x,int*y);
+  area(int fd, int*x,int*y);
   quit(int code);
 
   cls(int fd);
@@ -537,35 +535,11 @@ todo: make a minimal ls clone, to demonstrait directory reading
 testing
 *******
 linux 3.16.0 gcc 4.8.4   eglibc 2.9........pass
-freebsd 10.2 clang 3.4.1 libc x.x.x........fail
+freebsd 10.2 clang 3.4.1 libc x.x.x........pass 
 
 
 issues
 ******
-- FreeBSD connect() failing with ECONNREFUSED.
-- FreeBSD connect() does not accept sizeof(struct sockaddr_storage).
-- FreeBSD read() does not fail with EISDIR if used on a directory fd.
-  this requires gets2 to attempt to readentry(), and fallback to read()
-  if readentry() fails.  probably better to just use an isdir() check.
-- gets2 does not advance to the next directory entry after reading in 
-  FreeBSD, due to FreeBSD not recognising directory seek offsets once
-  closedir() has been called.
-  - workarounds:
-    - do it slowly 
-      - check the offset of the fd, 0 = 0th entry, 1 = 1st entry, etc
-      - manually scan through the N entries until we reach the requested
-        entry number.
-      - this requires FreeBSD to keep the same directory entry ordering
-        between calls to closedir() and opendir().
-      - this requires FreeBSD to reset the seek position after every
-        unlink operation in delete
-    - do it thouroughly
-      - maintain a (lock protected) cache of DIR* and dev:ino values.
-        every attempt to gets2() from a directory fd looksup this cache,
-        and opendir()s it if nessesary.  if the dev:ino does not match,
-        it is replaced.
-      - this requires all fd closing to be done with minio's close2() for
-        absolute safety.
 - FreeBSD-xterm erroniously parses alt+char,alt+shift+char in its default
   configuration.  parses correctly when set to 'meta-sends-escape'.  what
   is different about FreeBSDs default xterm configuration and Ubuntu's?
@@ -580,6 +554,7 @@ future work
 - introduce #ifdef'd support for SOCK_CLOEXEC (covers all major OSs bar OSX)
 - introduce #ifdef'd support for OSX's version of SOCK_CLOEXEC, that applies
   to all sockets created by an existing socket.
+- introduce #ifdef'd support for SOCK_NONBLOCK
 - introduce #ifdef'd support for linux's dup3() (check for BSD,OSX equivalents)
 - introduce posix ____at() style filesystem functions (this will require 
   mocking up a connectat() and bindat() pair of functions)

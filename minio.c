@@ -184,7 +184,7 @@ static size_t readuntil(int fd,unsigned char*buf,size_t len)
 }
 static size_t readentry(int fd, char*buf, size_t len)
 {
-#ifdef __FreeBSD__
+#ifdef __FreeBSD__ /* FIXME should be testing for FreeBSD's default libc */
 	int err;
 
 	off_t offset;
@@ -237,7 +237,7 @@ fail:
 	errno=err;
 
 	return 0;
-#else
+#else /* FIXME should be testing for GNU libc */
 	int err;
 
 	struct dirent*ent;
@@ -686,17 +686,6 @@ int delete(char*path)
 		e = gets2(head,tmp,8192);
 		if(e>0)
 		{
-#if 0
-			/* if it is a file */
-			err = unlinkat(head,tmp,0);
-			if(err==0)
-				continue;
-
-			/* if it is a directory */
-			err = cd(head,tmp,O_CLOEXEC|O_NOFOLLOW);
-			if(err==0)
-				++stack;
-#else
 			/* if it is a directory */
 			err = cd(head,tmp,O_CLOEXEC|O_NOFOLLOW);
 			if(err==0)
@@ -709,7 +698,7 @@ int delete(char*path)
 			err = unlinkat(head,tmp,0);
 			if(err<0)
 				break;
-#endif
+
 			continue;
 		}
 
@@ -1467,32 +1456,6 @@ void crash(char*string,...)
 	_exit(EXIT_FAILURE);
 }
 
-#if 0
-static int dns(char*hostname, struct sockaddr_storage*addr)
-{
-	struct addrinfo hint;
-	struct addrinfo*info;
-
-	memset(&hint, 0, sizeof(struct addrinfo));
-	hint.ai_family = AF_UNSPEC; 
-	hint.ai_socktype = SOCK_STREAM;
-
-	int err;
-	err = getaddrinfo(hostname,NULL,&hint,&info);
-	if(err!=0)
-		/* FIXME how to pass dns specific errors? */
-		return -1;
-
-	if(addr!=NULL)
-	{
-		memset(addr,0,sizeof(struct sockaddr_storage));
-		memcpy(addr,info->ai_addr,info->ai_addrlen);
-	}
- 
-	freeaddrinfo(info);
-	return ((errno=0),0);
-}
-#endif
 static int socket2(int family, int type, int protocol, int flags)
 {
 	int err;
@@ -1542,48 +1505,6 @@ fail:
 }
 int dial(char*hostname, short port, int flags)
 {
-#if 0
-	struct sockaddr_storage addr; 
-	struct sockaddr_in*ipv4;
-	struct sockaddr_in6*ipv6;
-	ipv4 = (struct sockaddr_in*)&addr;
-	ipv6 = (struct sockaddr_in6*)&addr;
-
-	int err;
-	err = dns(hostname,&addr);
-	if(err<0)
-		/* FIXME how to pass dns specific errors? */
-		return -1;
-
-	if(addr.ss_family==AF_INET6)
-		ipv6->sin6_port = htons(port);
-	else
-		ipv4->sin_port = htons(port);
-
-	int sck;
-	sck = socket(addr.ss_family,SOCK_STREAM,0);
-	if(sck<0)
-		return -1;
-
-	if((flags&O_CLOEXEC)==O_CLOEXEC)
-	{
-		err = fcntl(sck,F_SETFD,flags&O_CLOEXEC);
-		if(err<0)
-			goto fail;
-	}
-	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err<0)
-		goto fail;
-
-	err = connect(sck, (struct sockaddr*)&addr, sizeof(struct sockaddr_storage));
-	if(err<0)
-		goto fail;
-
-	return sck;
-fail:
-	close2(sck);
-	return -1; 
-#else
 	int err;
 
 	struct addrinfo*info;
@@ -1628,7 +1549,6 @@ fail:
 pass:
 	freeaddrinfo(info);
 	return ((errno=0),cln);
-#endif
 } 
 int tcp(char*hostname, short port, int flags)
 {
@@ -1697,78 +1617,6 @@ fail:
 	errno=err;
 	return -1;
 }
-#if 0
-int tcp4(short port, int flags)    /* tcp/ip4 */
-{
-	int sck;
-	sck = socket(AF_INET,SOCK_STREAM,0);
-
-	int err;
-	if((flags&O_CLOEXEC)==O_CLOEXEC)
-	{
-		err = fcntl(sck,F_SETFD,FD_CLOEXEC);
-		if(err<0)
-			goto fail;
-	}
-	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err<0)
-		goto fail;
-
-	struct sockaddr_in addr;
-	memset(&addr,0,sizeof(struct sockaddr_in));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;	
-	addr.sin_port = htons(port);
-
-	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in));
-	if(err<0)
-		goto fail; 
-
-	err = listen(sck,1024);
-	if(err<0)
-		goto fail;
-
-	return sck;
-fail:
-	close2(sck);
-	return -1;
-}
-int tcp6(short port, int flags)    /* tcp/ip6 */
-{
-	int sck;
-	sck = socket(AF_INET6,SOCK_STREAM,0);
-
-	int err;
-	if((flags&O_CLOEXEC)==O_CLOEXEC)
-	{
-		err = fcntl(sck,F_SETFD,FD_CLOEXEC);
-		if(err==-1)
-			goto fail;
-	}
-	err = fcntl(sck,F_SETFL,flags&(O_NONBLOCK|O_ASYNC)); 
-	if(err<0)
-		goto fail;
-
-	struct sockaddr_in6 addr;
-	memset(&addr,0,sizeof(struct sockaddr_in6));
-	addr.sin6_family = AF_INET6;
-	addr.sin6_addr = in6addr_any;	
-	addr.sin6_port = htons(port);
-
-	err = bind(sck,(struct sockaddr*)&addr,sizeof(struct sockaddr_in6));
-	if(err<0)
-		goto fail;
-
-	err = listen(sck,1024);
-	if(err<0)
-		goto fail;
-
-	return sck;
-fail:
-	close2(sck);
-	return -1;
-}
-#endif
 
 int give(int fd, int payload)
 {

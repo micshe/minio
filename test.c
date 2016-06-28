@@ -270,23 +270,6 @@ void test_terminal_input(void)
 	linemode(0);
 }
 
-#if 0
-void crash(char*error, ...)
-{
-	int err;
-	err = errno;
-
-	va_list args; 
-	va_start(args,error);
-		fprintf(stderr,error,args);
-	va_end(args);
-
-	fprintf(stderr,": %d: %s\n",err,strerror(err));
-
-	_exit(1);
-}
-#endif
-
 void test_tcp()
 {
 	int err;
@@ -294,106 +277,6 @@ void test_tcp()
 	int cln;
 	char buf[8192];
 	pid_t pid;
-
-#if 0
-	printf("test: ipv4 io\n");
-	pid=fork();
-	if(pid==-1)
-		crash("fail: fork"); 
-	if(pid==0)
-	{
-		printf("test: server: create tcp/ip4 server\n");
-		srv = tcp4(8084,0);
-		if(srv==-1)
-			crash("fail: server: could not create tcp/ip4 server: %s\n",strerror(errno));
-		printf("pass: server: created tcp/ip4 server\n");
-
-		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
-		size_t len=0;
-		cln = accept(srv,(struct sockaddr*)&tmp,&len);
-		if(cln == -1)
-			crash("fail: server: accept");
-		printf("pass: server: accepted client connection\n");
-
-		printf("test: server: sending string\n");
-		print(cln,"hello tcp/ipv4!\n");
-		printf("pass: server: string sent\n"); 
-
-		close(srv);
-		close(cln);
-
-		exit(0);
-	}
-	else
-	{
-		sleep(4);
-
-		printf("test: client: dial tcp/ip4 server\n");
-		cln = dial("localhost",8084,0);
-		if(cln==-1)
-		{
-			kill(pid,SIGKILL);
-			crash("fail: client: could not dial tcp/ip4 server: %s\n",strerror(errno));
-		}
-		printf("pass: client: dialed tcp/ip4 sever\n");
-
-		printf("test: client: gets2() string\n");
-		gets2(cln,buf,8192);
-		printf("pass: client: read %s",buf);
-
-		close(cln);
-	}
-	printf("pass: ipv4 io\n\n");
-
-	printf("test: ipv6 io\n");
-	pid = fork();
-	if(pid==-1)
-		crash("fail: fork");
-	if(pid==0)
-	{
-		printf("test: server: create tcp/ip6 server\n");
-		srv = tcp6(8086,0);
-		if(srv==-1)
-			crash("fail: server: could not create tcp/ip6 server: %s\n",strerror(errno));
-		printf("pass: server: created tcp/ip6 server\n");
-
-		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
-		size_t len=0;
-		cln = accept(srv,(struct sockaddr*)&tmp,&len);
-		if(cln == -1)
-			crash("fail: server: accept");
-		printf("pass: server: accepted client connection\n");
-
-		printf("test: server: sending string\n");
-		print(cln,"hello tcp/ipv6!\n");
-		printf("pass: server: string sent\n"); 
-
-		close(srv);
-		close(cln);
-
-		exit(0);
-	}
-	else
-	{
-		sleep(4);
-
-		printf("test: client: dial tcp/ip6 server\n");
-		cln = dial("localhost",8086,0);
-		if(cln==-1)
-		{
-			kill(pid,SIGKILL);
-			crash("fail: client: could not dial tcp/ip6 server\n");
-		}
-		printf("pass: client: dialed tcp/ip6 sever\n");
-
-		printf("test: client: gets2() string\n");
-		gets2(cln,buf,8192);
-		printf("pass: client: read %s",buf);
-
-		close(cln);
-	}
-	printf("pass: ipv6 io\n\n");
-#endif
 
 	printf("test: ipv6|ipv4 io\n");
 	pid = fork();
@@ -407,13 +290,7 @@ void test_tcp()
 			crash("fail: server: could not create tcp server: %s\n",strerror(errno));
 		printf("pass: server: created tcp server\n");
 
-#if 0
-		struct sockaddr_storage tmp; memset(&tmp,0,sizeof(struct sockaddr_storage));
-		size_t len=0;
-		cln = accept(srv,(struct sockaddr*)&tmp,&len);
-#else
 		cln = take(srv,0);
-#endif
 		if(cln == -1)
 			crash("fail: server: accept");
 		printf("pass: server: accepted client connection\n");
