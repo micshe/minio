@@ -41,18 +41,50 @@ clean:
 	@rm -f libminio.so 2> /dev/null || true
 	@rm -f minio-hlib.h 2> /dev/null || true
 	@rm -f test 2> /dev/null || true
+	@rm -f test-object 2> /dev/null || true
+	@rm -f test-static 2> /dev/null || true
+	@rm -f test-shared 2> /dev/null || true
+	@rm -f test-hlib 2> /dev/null || true
 	@chmod -R 755 tmpdir0 2> /dev/null || true
 	@rm -r tmpdir0 2> /dev/null || true
 	@rm tmpsrv 2> /dev/null || true
 	@rm -r tmpdir 2> /dev/null || true
 
-test: minio.o test.c
-	$(CC) test.c minio.o $(CFLAGS) -o test
+test-object: minio.o test.c
+	$(CC) test.c minio.o $(CFLAGS) -o test-object
 	@chmod -R 755 tmpdir0 2> /dev/null || true
 	@rm -r tmpdir0 2>  /dev/null || true
 	@rm tmpsrv 2> /dev/null || true
 	@rm -r tmpdir 2> /dev/null || true 
-	./test 
+	./test-object
+
+test-hlib: hlib test.c
+	$(CC) test.c $(CFLAGS) -o test-hlib -DMINIO_TEST_LOCAL_HLIB
+	@chmod -R 755 tmpdir0 || true
+	@rm -r tmpdir0 || true
+	@rm tmpsrv|| true
+	@rm -r tmpdir|| true
+	./test-hlib
+
+test-static: static test.c
+	$(CC) -static test.c $(CFLAGS) -o test-static -L. -lminio
+	@chmod -R 755 tmpdir0 2> /dev/null || true
+	@rm -r tmpdir0 2>  /dev/null || true
+	@rm tmpsrv 2> /dev/null || true
+	@rm -r tmpdir 2> /dev/null || true 
+	./test-static 
+
+test-shared: shared test.c
+	#pass "-R ." to the linker so that it will search for shared
+	#libraries in the current working directory during runtime.
+	$(CC) test.c libminio.so $(CFLAGS) -Wl,-R -Wl,. -o test-shared
+	@chmod -R 755 tmpdir0 2> /dev/null || true
+	@rm -r tmpdir0 2>  /dev/null || true
+	@rm tmpsrv 2> /dev/null || true
+	@rm -r tmpdir 2> /dev/null || true 
+	./test-shared 
+
+test: test-object test-hlib test-static test-shared
 
 static: libminio.a
 shared: libminio.so
@@ -159,5 +191,6 @@ help:
 all options help test clean \
 uninstall uninstall-shared uninstall-static uninstall-header \
 install install-shared install-staic install-header \
-hlib install-hlib uninstall-hlib
+hlib install-hlib uninstall-hlib \
+test-object test-static test-shared test-hlib
 
