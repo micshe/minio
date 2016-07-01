@@ -1,4 +1,8 @@
+#ifdef MINIO_TEST_LOCAL_HLIB
+#include"minio-hlib.h"
+#else
 #include"minio.h"
+#endif
 
 #include<sys/stat.h>
 #include<sys/socket.h>
@@ -285,7 +289,8 @@ void test_tcp()
 	if(pid==0)
 	{
 		printf("test: server: create tcp server\n");
-		srv = tcp("localhost",8080,0);
+		//srv = tcp("localhost",8080,0);
+		srv = tcp(8080,0);
 		if(srv==-1)
 			crash("fail: server: could not create tcp server: %s\n",strerror(errno));
 		printf("pass: server: created tcp server\n");
@@ -309,7 +314,10 @@ void test_tcp()
 		sleep(4);
 
 		printf("test: client: dial tcp server\n");
-		cln = dial("localhost",8080,0);
+		//cln = dial("localhost",8080,0); /* pass */
+		//cln = dial("127.0.0.1",8080,0); /* pass */
+		//cln = dial("::1",8080,0);       /* fail */
+		cln = dial(NULL,8080,0);
 		if(cln==-1)
 		{
 			kill(pid,SIGKILL);
@@ -423,7 +431,7 @@ void test_filter(void)
 		exit(1);
 	}
 	printf("pass: make simplex (fd=%d,%d)\n",subp[0],subp[1]);
-#if 1
+
 	printf("test: push process 'echo abcde' to pipeline\n");
 	err = filter(subp[0],"echo abcde",-1,NULL);
 	if(err==-1)
@@ -432,7 +440,7 @@ void test_filter(void)
 		exit(1);
 	}
 	printf("pass: push process\n");
-#endif
+
 	printf("test: push process \"tr 'a' 'A'\" to pipeline\n");
 	err = filter(subp[0],"tr 'a' 'A'",-1,NULL);
 	if(err==-1)

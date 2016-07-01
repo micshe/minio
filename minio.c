@@ -1519,9 +1519,12 @@ int dial(char*hostname, short port, int flags)
 	char service[32];
 	snprintf(service,31,"%d",port); /* getaddrinfo only allows specifying the destination port via this mechanism */
 	err = getaddrinfo(hostname,service,&hint,&info);
-	if(err<0)
+	if(err!=0)
+	{
+		printf("getaddrinfo: %s\n",gai_strerror(err));
 		/* FIXME how to return dns specific errors? */
 		return -1;
+	}
 
 	int cln;
 	struct addrinfo*next;
@@ -1529,15 +1532,22 @@ int dial(char*hostname, short port, int flags)
 	{
 		cln=socket2(next->ai_family,next->ai_socktype,next->ai_protocol,flags);
 		if(cln<0)
+		{
+			perror("socket2");
 			goto fail;
+		}
 
 		err=connect(cln,next->ai_addr,next->ai_addrlen);
 		if(err<0)
+		{
+			perror("connect");
 			close(cln);
+		}
 		else
 			goto pass;
 	}
 	/* fallthrough */
+	printf("fallthrough");
 fail:
 	err=errno;
 		freeaddrinfo(info);
@@ -1550,6 +1560,7 @@ pass:
 	freeaddrinfo(info);
 	return ((errno=0),cln);
 } 
+#if 0
 int tcp(char*hostname, short port, int flags)
 {
 	/**
@@ -1592,6 +1603,7 @@ int tcp(char*hostname, short port, int flags)
 		/* FIXME how to return dns specific errors? */
 		return -1;
 
+#if 0
 	int srv;
 	srv = socket2(info->ai_family, info->ai_socktype, info->ai_protocol, flags);
 	if(srv<0)
@@ -1600,7 +1612,44 @@ int tcp(char*hostname, short port, int flags)
 	err = bind(srv,info->ai_addr, info->ai_addrlen);
 	if(err<0)
 		goto fail;
+#else
+	int srv;
+	struct addrinfo*next;
+	for(next=info;next!=NULL;next=next->ai_next)
+	{
+		srv=socket2(next->ai_family,next->ai_socktype,next->ai_protocol,flags);
+		if(srv<0)
+			goto fail;
 
+		err=bind(srv,next->ai_addr,next->ai_addrlen);
+		if(srv<0)
+			close(srv);
+		else
+			goto pass;
+	}
+	/* fallthrough */
+fail:
+	err=errno;
+		freeaddrinfo(info);
+		if(srv>=0)
+			close(srv);
+	errno=err;
+	return -1;
+
+pass:
+	err = listen(srv,4096);
+	if(err<0)
+	{
+		perror("listen");
+		goto fail;
+	}
+
+	freeaddrinfo(info);
+	return ((errno=0),srv);
+
+#endif 
+
+#if 0
 	err = listen(srv,4096);
 	if(err<0)
 		goto fail;
@@ -1616,7 +1665,66 @@ fail:
 			close(srv);
 	errno=err;
 	return -1;
+#endif
 }
+#else
+int tcp(short port, int flags)
+{
+	/**
+	create a publically accessible tcp server, that 
+	listens on @port.
+
+	returns server-fd on success, -1 on failure.
+	**/
+
+	int err;
+	struct addrinfo*info;
+	struct addrinfo hint;
+
+	memset(&hint,0,sizeof(struct addrinfo));
+	hint.ai_family = AF_UNSPEC;     /* both ipv4 and ipv6 */
+	hint.ai_socktype = SOCK_STREAM; /* insist on tcp -- Linux gives this hint precidence over ai_protocol */
+	hint.ai_protocol = IPPROTO_TCP; /* insist on tcp --   OSX gives this hint precidence over ai_socktype */	
+	hint.ai_flags = AI_PASSIVE;     /* listen on all addresses the machine has */
+
+	char service[32];
+	snprintf(service,31,"%d",port);
+	err = getaddrinfo(NULL,service,&hint,&info);
+	if(err!=0)
+		/* FIXME how to return dns specific errors? */
+		return -1;
+
+	int srv;
+	struct addrinfo*next;
+	for(next=info;next!=NULL;next=next->ai_next)
+	{
+		srv=socket2(next->ai_family,next->ai_socktype,next->ai_protocol,flags);
+		if(srv<0)
+			goto fail;
+
+		err=bind(srv,next->ai_addr,next->ai_addrlen);
+		if(srv<0)
+			close(srv);
+		else
+		{
+			err = listen(srv,4096);
+			if(err<0)
+				goto fail;
+
+			freeaddrinfo(info);
+			return ((errno=0),srv); 
+		}
+	}
+	/* fallthrough */
+fail:
+	err=errno;
+		freeaddrinfo(info);
+		if(srv>=0)
+			close(srv);
+	errno=err;
+	return -1;
+}
+#endif
 
 int give(int fd, int payload)
 {
@@ -1741,5 +1849,42 @@ int take(int fd, int flags)
 	}
 
 	return fd;
+}
+
+/* timing */
+#include<time.h>
+size_t now(void)
+{
+#ifdef _POSIX_MONOTONIC_CLOCK
+	int err; 
+	struct timespec time;
+	err = clock_gettime(CLOCK_MONOTONIC,&time);
+	if(err<0)
+		return 0; 
+	/* return monotonic time in milliseconds */
+	return (time.tv_sec*1000)+(time.tv_nsec/1000000);
+#else
+	return ((errno=ENOSYS),0);
+#endif
+}
+int until(size_t milliseconds)
+{
+#ifdef _POSIX_MONOTONIC_CLOCK
+	int err; 
+	struct timespec time;
+	time.tv_sec=milliseconds/1000;
+	time.tv_nsec=(milliseconds%1000)*1000000;
+retry:
+	/* clock_nanosleep returns positive errno values */
+	err = clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&time,NULL);
+	if(err==EINTR)
+		goto retry;
+	if(err!=0)
+		return ((errno=err),-1);
+
+	return ((errno=0),0);
+#else
+	return ((errno=ENOSYS),0);
+#endif 
 }
 

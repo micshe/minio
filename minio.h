@@ -95,7 +95,7 @@ int character(char buf[8]);
 void quit(int code);
 void crash(char*string,...);
 
-int tcp(char*hostname, short port, int flags);
+int tcp(short port, int flags);
 int dial(char*hostname, short port, int flags);
 
 int take(int fd, int flags);

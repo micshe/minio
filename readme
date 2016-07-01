@@ -185,16 +185,17 @@ use -1 as the fd to cdup the current-working-directory.
 returns 0 on success, -1 on failure.
 
 
-  int tcp(char*hostname, short port, int flags);
+  int tcp(short port, int flags);
 
-creates a generic ipv4|ipv6 tcp server listening on 
-@hostname:@port.  returns fd of listening server.  client 
-connections can be taken either by posix's accept(2), or 
-by minio's take().  returns -1 on failure.  flags can be 
-used to set O_NONBLOCK and O_CLOEXEC.
+creates a public ipv4|ipv6 tcp server listening on @port.  
+returns fd of listening server.  client connections can be 
+taken either by posix's accept(2), or by minio's take().  
+returns -1 on failure.  flags can be used to set 
+O_NONBLOCK and O_CLOEXEC.
 
-if @hostname is NULL, listens on all hostnames available
-to the machine, including localhost.
+this function does not create loopback-only servers.  if
+you need a server that is not publically accessible, use
+a mkserver() which creates a filesystem local socket.
 
 
   int dial(char*hostname, int port, int flags);
@@ -568,12 +569,17 @@ future work
   call that emulate the MSG_NOWAIT|MSG_WAITALL, and (possibly) always attempt
   to perform MSG_NOSIGNAL like behaviour.
   - on OSX this can be done with per-thread pthread signal blocking
-  - on linux this will have to be done by a syscall() to avoid linking with
-    the pthread library
+  - on linux/glibc this will have to be done by a syscall() to avoid linking 
+    with the pthread library
   - on FreeBSD|etc this may require the same approach as linux
 - introduce join,split,fuse,wrap,tee,tap,syphon,stream file-descriptor routing 
   operations
 - extend filename() to avail of the /proc/self/fd directory if it exists
+- consider introducing a 64bit millisecond monotonic clock, so that resets
+  around the second don't have to be manually managed.  now() or time().
+- consider introducing a pause-until-64bit-millisecond-monotonic-clock time
+  function, so that waiting the remainder of a timeperiod in ui-apps can be
+  done without special time-compare functions.  until() or waituntil().
 
 - consider introducing a tmpfile function, that creates a randomly named
   file (without the user having to pass a mutable template string), or an
@@ -632,4 +638,8 @@ future work
 - consider introducing an isdir(int fd) function, that tests the type of open 
   fd.  not nessesary to introduce functions for testing the various forms of
   non-directory fds.
+
+OUTSTANDING
+***********
+deal with sonames.
 
