@@ -1560,114 +1560,6 @@ pass:
 	freeaddrinfo(info);
 	return ((errno=0),cln);
 } 
-#if 0
-int tcp(char*hostname, short port, int flags)
-{
-	/**
-	create a tcp server, that listens on @hostname:@port.
-
-	to create a localhost-only tcp server,
-	 srv=tcp("localhost",port,0);
-
-	to create a publicaly available tcp server,
-	 srv=tcp(NULL,port,0);
-
-	to create a tcp server on only a specific ip address,
-	 srv=tcp("xxx.xxx.xxx.xxx",port,0);
-	or
-	 srv=tcp("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx",port,0);
-
-	returns server-fd on success, -1 on failure.
-	**/
-
-	/* FIXME this should loop through all getaddrinfo results like dial() */
-
-	int err;
-	struct addrinfo*info;
-	struct addrinfo hint;
-
-	memset(&hint,0,sizeof(struct addrinfo));
-	hint.ai_family = AF_UNSPEC;     /* both ipv4 and ipv6 */
-	hint.ai_socktype = SOCK_STREAM; /* insist on tcp -- Linux gives this hint precidence over ai_protocol */
-	hint.ai_protocol = IPPROTO_TCP; /* insist on tcp --   OSX gives this hint precidence over ai_socktype */	
-	/* 
-	iff hostname==NULL then listen on ALL addresses the machine has 
-	else listen only on hostname
-	*/
-	hint.ai_flags = AI_PASSIVE;
-
-	char service[32];
-	snprintf(service,31,"%d",port);
-	err = getaddrinfo(hostname,service,&hint,&info);
-	if(err!=0)
-		/* FIXME how to return dns specific errors? */
-		return -1;
-
-#if 0
-	int srv;
-	srv = socket2(info->ai_family, info->ai_socktype, info->ai_protocol, flags);
-	if(srv<0)
-		goto fail;
-
-	err = bind(srv,info->ai_addr, info->ai_addrlen);
-	if(err<0)
-		goto fail;
-#else
-	int srv;
-	struct addrinfo*next;
-	for(next=info;next!=NULL;next=next->ai_next)
-	{
-		srv=socket2(next->ai_family,next->ai_socktype,next->ai_protocol,flags);
-		if(srv<0)
-			goto fail;
-
-		err=bind(srv,next->ai_addr,next->ai_addrlen);
-		if(srv<0)
-			close(srv);
-		else
-			goto pass;
-	}
-	/* fallthrough */
-fail:
-	err=errno;
-		freeaddrinfo(info);
-		if(srv>=0)
-			close(srv);
-	errno=err;
-	return -1;
-
-pass:
-	err = listen(srv,4096);
-	if(err<0)
-	{
-		perror("listen");
-		goto fail;
-	}
-
-	freeaddrinfo(info);
-	return ((errno=0),srv);
-
-#endif 
-
-#if 0
-	err = listen(srv,4096);
-	if(err<0)
-		goto fail;
-
-	freeaddrinfo(info);
-
-	return ((errno=0),srv);
-
-fail:
-	err=errno;
-		freeaddrinfo(info);
-		if(srv>=0)
-			close(srv);
-	errno=err;
-	return -1;
-#endif
-}
-#else
 int tcp(short port, int flags)
 {
 	/**
@@ -1724,7 +1616,6 @@ fail:
 	errno=err;
 	return -1;
 }
-#endif
 
 int give(int fd, int payload)
 {
