@@ -77,7 +77,7 @@ test-static: static test.c
 test-shared: shared test.c
 	#pass "-R ." to the linker so that it will search for shared
 	#libraries in the current working directory during runtime.
-	$(CC) test.c libminio.so $(CFLAGS) -Wl,-R -Wl,. -o test-shared
+	$(CC) test.c $(CFLAGS) -L. -lminio -Wl,-R -Wl,. -o test-shared
 	@chmod -R 755 tmpdir0 2> /dev/null || true
 	@rm -r tmpdir0 2>  /dev/null || true
 	@rm tmpsrv 2> /dev/null || true
